@@ -144,13 +144,57 @@ Export a few real voice notes from WhatsApp and run them through. That's how you
 whether Urdu transcription is good enough for *your* accents and *your* product names —
 which I can't tell you in advance, and neither can any benchmark.
 
-### 5. Run it
+### 5. Dry run for a day
 
 ```bash
-npm start
+caffeinate -i npm run dry 2>&1 | tee -a dryrun.log
 ```
 
-Set `DRY_RUN=true` for the first day if you'd rather watch the log than get cards.
+`npm run dry` sets `DRY_RUN=true` and `DEBUG=1`. It watches your real chats and logs every
+task it *would* have asked you to approve — **no WhatsApp messages are sent and nothing is
+written to Notion**. Model calls still happen, so it still costs a few pence and your
+messages still go to Google; that is the part being tested.
+
+Four things to know before you leave it running:
+
+- **`caffeinate -i` stops the Mac idling to sleep, but closing the lid still sleeps it.**
+  Leave the lid open, or plug into an external display. A sleeping Mac catches nothing.
+- **Closing the terminal kills it.** Keep the window open, or run it under `tmux`/`screen`.
+- **Only messages that arrive after you start are seen.** `CATCH_UP_MINUTES=0` by default,
+  so it does not go back over the morning's chat.
+- **A conversation is only analysed after 90 seconds of quiet** (`FLUSH_IDLE_SECONDS`), so
+  expect a lag between the chat happening and the log entry.
+
+Stop it with Ctrl-C — that flushes anything still buffered and closes the browser cleanly.
+
+### 6. Read the log, then tune
+
+```bash
+grep "asked for approval" dryrun.log     # what it would have surfaced
+grep "no tasks in" dryrun.log            # conversations it let through
+```
+
+Judge it on two questions: did it miss anything you'd have wanted, and did it raise
+anything you'd have been annoyed by. Misses usually mean the chat's `context` in
+`config/chats.json` is too thin. Noise usually means raising `MIN_CONFIDENCE`, or tightening
+the "What is NOT a task" list in [src/extract/prompt.js](src/extract/prompt.js).
+
+### 7. Go live
+
+```bash
+npm run reset:queue
+```
+
+**Do this before your first real day.** A dry run still records candidates and their
+duplicate fingerprints locally, so going straight to `npm start` would hand you a backlog of
+cards for conversations you already reviewed, and silently suppress anything the dry run saw
+for 14 days. Cached voice-note transcripts are kept.
+
+Then set `DRY_RUN=false` in `.env` and:
+
+```bash
+caffeinate -i npm start
+```
 
 ---
 
