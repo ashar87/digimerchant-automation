@@ -68,6 +68,8 @@ they WILL contain errors — mangled names, wrong numbers, [inaudible] gaps.
 4. Assignee: use the exact roster name. If someone volunteers ("I'll do it"), the assignee is
    the SENDER of that message. If it is addressed to someone ("Rafay can you…"), that person.
    If it is genuinely unclear, use null.
+   The chat's own context may state assignment rules — for example that one person is
+   accountable for someone who is not on the roster. Those rules OVERRIDE this one.
 5. Due date: only when the conversation implies one. Resolve relative dates ("Friday",
    "end of month", "next week") against the supplied current date. Format yyyy-mm-dd.
 6. quote: copy the single message that most directly establishes the task, verbatim, trimmed

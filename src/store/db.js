@@ -51,6 +51,12 @@ CREATE TABLE IF NOT EXISTS meta (
 );
 `);
 
+// Added after the first release; ALTER is idempotent-guarded so existing DBs upgrade.
+const columns = db.prepare('PRAGMA table_info(candidates)').all().map((c) => c.name);
+if (!columns.includes('notion_database_id')) {
+  db.exec('ALTER TABLE candidates ADD COLUMN notion_database_id TEXT');
+}
+
 const now = () => Date.now();
 
 /* ---------- message dedupe (survives restarts) ---------- */
@@ -92,8 +98,8 @@ export function nextRef() {
 /* ---------- candidates ---------- */
 
 const _insertCandidate = db.prepare(`
-  INSERT INTO candidates (ref, chat_id, chat_label, title, assignee, due_date, priority, notes, quote, confidence, status, created_at)
-  VALUES (@ref, @chat_id, @chat_label, @title, @assignee, @due_date, @priority, @notes, @quote, @confidence, 'pending', @created_at)
+  INSERT INTO candidates (ref, chat_id, chat_label, title, assignee, due_date, priority, notes, quote, confidence, status, created_at, notion_database_id)
+  VALUES (@ref, @chat_id, @chat_label, @title, @assignee, @due_date, @priority, @notes, @quote, @confidence, 'pending', @created_at, @notion_database_id)
 `);
 
 export function saveCandidate(c) {
@@ -110,6 +116,7 @@ export function saveCandidate(c) {
     quote: c.quote ?? null,
     confidence: c.confidence ?? null,
     created_at: now(),
+    notion_database_id: c.notionDatabaseId ?? null,
   });
   return { ...c, ref, status: 'pending' };
 }

@@ -130,8 +130,9 @@ export function createApprovalFlow(client) {
     }
 
     try {
-      await ensureSelectOption('Source', candidate.chat_label);
-      if (candidate.assignee) await ensureSelectOption('Assignee', candidate.assignee);
+      const board = candidate.notion_database_id || undefined;
+      await ensureSelectOption('Source', candidate.chat_label, board);
+      if (candidate.assignee) await ensureSelectOption('Assignee', candidate.assignee, board);
       const url = await createTask(candidate);
       store.decideCandidate(candidate.ref, 'approved', url);
       store.rememberFingerprint(store.fingerprintOf(candidate.chat_id, candidate.title), candidate.ref);

@@ -94,8 +94,11 @@ export async function createTask(candidate) {
   }
   children.push(block('paragraph', `Captured from WhatsApp — ${candidate.chat_label || candidate.chatLabel}`));
 
+  // A chat can route to its own board — see "Keeping chats apart" in the README.
+  const databaseId = candidate.notion_database_id || candidate.notionDatabaseId || config.notionDatabaseId;
+
   const page = await notion().pages.create({
-    parent: { database_id: config.notionDatabaseId },
+    parent: { database_id: databaseId },
     properties,
     children,
   });
@@ -112,15 +115,15 @@ function block(type, content) {
 }
 
 /** Adds a select option if it isn't already there (e.g. a new chat as a Source). */
-export async function ensureSelectOption(property, name) {
-  if (config.dryRun || !name) return;
+export async function ensureSelectOption(property, name, databaseId = config.notionDatabaseId) {
+  if (config.dryRun || !name || !databaseId) return;
   try {
-    const db = await notion().databases.retrieve({ database_id: config.notionDatabaseId });
+    const db = await notion().databases.retrieve({ database_id: databaseId });
     const prop = db.properties[property];
     if (!prop?.select) return;
     if (prop.select.options.some((o) => o.name === name)) return;
     await notion().databases.update({
-      database_id: config.notionDatabaseId,
+      database_id: databaseId,
       properties: { [property]: { select: { options: [...prop.select.options, { name }] } } },
     });
     log.debug(`notion: added "${name}" to ${property}`);

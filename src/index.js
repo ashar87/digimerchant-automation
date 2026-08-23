@@ -24,7 +24,7 @@ const startedAt = Math.floor(Date.now() / 1000) - config.catchUpMinutes * 60;
 
 /* ---------- buffered conversation -> Claude -> approval cards ---------- */
 
-const buffer = createBuffer(async ({ chatId, chatLabel, chatContext, isGroup, messages }) => {
+const buffer = createBuffer(async ({ chatId, chatLabel, chatContext, isGroup, unknownAssignee, notionDatabaseId, messages }) => {
   log.info(`analysing ${messages.length} message(s) from "${chatLabel}"`);
 
   const candidates = await extractTasks({
@@ -34,6 +34,7 @@ const buffer = createBuffer(async ({ chatId, chatLabel, chatContext, isGroup, me
     isGroup,
     messages,
     people: chats.people,
+    unknownAssignee,
   });
 
   if (candidates.length === 0) {
@@ -48,7 +49,7 @@ const buffer = createBuffer(async ({ chatId, chatLabel, chatContext, isGroup, me
       continue;
     }
     store.rememberFingerprint(fp, null);
-    const saved = store.saveCandidate(candidate);
+    const saved = store.saveCandidate({ ...candidate, notionDatabaseId });
     await approval.sendCard(saved);
   }
 });
@@ -80,6 +81,8 @@ client.on('message_create', async (msg) => {
       chatLabel: watched.label,
       chatContext: watched.context,
       isGroup: m.isGroup,
+      unknownAssignee: watched.unknownAssignee || null,
+      notionDatabaseId: watched.notionDatabaseId || null,
     }, buffered);
   } catch (err) {
     log.error('message handler:', err.message);

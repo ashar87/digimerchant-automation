@@ -1,5 +1,8 @@
 # Digi Merchant Automation — Phase 1: WhatsApp → Notion tasks
 
+> **Access note:** the Notion board is for Ashar and Atif only. See
+> [Keeping chats apart](#keeping-chats-apart) before sharing it with anyone else.
+
 Watches the WhatsApp chats you choose, uses an LLM to spot real tasks in the conversation
 — **text and voice notes**, including Urdu — asks you to confirm each one in your own
 WhatsApp self-chat, and writes the approved ones into a Notion board you share with Atif
@@ -94,7 +97,11 @@ the workspace — if you get `object_not_found`, the ⋯ → Connections step wa
 
 Creates **Digi Merchant Tasks** with Task / Status / Assignee / Due / Priority / Source /
 Captured / Confidence / Ref columns, and writes `NOTION_DATABASE_ID` back into `.env`.
-Share that page with Atif and Rafay.
+**Share that page with Atif only. Do not share it with Rafay.** The board carries tasks
+extracted from Ashar's direct chat with Atif, which covers supplier pricing, margins, and
+market/product research that is deliberately not discussed with the VAs. Notion permissions
+are page-level — anyone who can see the database sees every row in it, and there is no way
+to hide individual rows from one collaborator.
 
 ### 3. Pick the chats to watch
 
@@ -211,6 +218,41 @@ always in the first screenful.
 
 Video, stickers, locations and contacts are ignored. Anything over `MAX_ATTACHMENT_MB`
 (default 8MB) is skipped with a log line.
+
+---
+
+## Keeping chats apart
+
+Chats differ in how sensitive they are. The Amazon VA group is execution work the VAs are
+already part of; the direct chat with Atif also carries supplier pricing, margins, and
+market research that is deliberately kept from them.
+
+Because Notion permissions are page-level, a single shared board leaks the second into the
+first. Two things follow:
+
+1. **The board is not shared with Rafay.** He continues to receive his work over WhatsApp.
+2. **Routing is by chat, never by topic.** Each entry in `config/chats.json` may set its own
+   `notionDatabaseId`; tasks from that chat go to that board and no other. Asking the model
+   to judge which individual tasks are sensitive would be the wrong design — one
+   misclassification is permanent and silent, whereas which chat a message came from is a
+   fact rather than a judgement.
+
+If you later want Rafay to have a board of his own, create a second database, put its ID on
+the group's entry in `config/chats.json`, and share only that one with him:
+
+```json
+{ "id": "1203…@g.us", "label": "Amazon VA (group)", "notionDatabaseId": "<the shared board>" }
+```
+
+A chat with no `notionDatabaseId` falls back to `NOTION_DATABASE_ID` from `.env`.
+
+### Assignment rules
+
+A chat can also set `unknownAssignee`. Any assignee the model returns that isn't on the
+roster is mapped to that person instead. The Amazon VA group uses this: there is a third VA
+whom Atif manages directly, so tasks landing on that VA are assigned to Atif. The chat's
+`context` states the same rule in prose so the model applies it too — the config setting is
+the deterministic backstop for when it doesn't.
 
 ---
 
