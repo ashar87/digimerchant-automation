@@ -80,11 +80,17 @@ Copy `.env.example` to `.env` and fill in `GEMINI_API_KEY` (billing enabled) and
 1. Create an integration at <https://www.notion.so/my-integrations> → copy the secret.
 2. In Notion, open the page the task board should live under → `⋯` → **Connections** →
    add your integration.
-3. Copy that page's ID from its URL into `NOTION_PARENT_PAGE_ID`.
+3. Pass that page's URL straight to the setup script.
 
 ```bash
-npm run setup:notion
+npm run setup:notion -- https://www.notion.so/Your-Page-abc123
 ```
+
+Not sure which pages the integration can reach? `npm run setup:notion -- --list`.
+
+Note: an internal Notion integration cannot create top-level pages, so the board must live
+under a page you create and share with it. Sharing is per-page and is not inherited from
+the workspace — if you get `object_not_found`, the ⋯ → Connections step was missed.
 
 Creates **Digi Merchant Tasks** with Task / Status / Assignee / Due / Priority / Source /
 Captured / Confidence / Ref columns, and writes `NOTION_DATABASE_ID` back into `.env`.
