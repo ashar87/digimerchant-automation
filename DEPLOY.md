@@ -8,6 +8,55 @@ Budget about 30 minutes.
 
 ---
 
+## The short version
+
+Two commands from your Mac, then scan a QR code.
+
+**1. Create a server.** Debian 12 or Ubuntu 24.04, **2 GB RAM minimum** (this runs a real
+Chromium; 1 GB gets OOM-killed hours in and looks like a bug). Hetzner CX22 ~€4.50/mo,
+or CAX11 ARM ~€4/mo — ARM is fine, the scripts handle it. Add your SSH key when creating it.
+
+**2. Push and set up:**
+
+```bash
+./deploy/push.sh root@YOUR_SERVER_IP
+```
+
+That copies the code plus your `.env` and `config/chats.json` (both gitignored, so this is
+how they get there), installs Node, Chromium and swap, creates a service user, installs the
+systemd unit, and closes the firewall to everything but SSH. It's idempotent — re-run it
+any time.
+
+**3. Pair WhatsApp and start.** The script prints both commands when it finishes. Pairing
+shows a QR in your terminal; scan it with **WhatsApp → Settings → Linked devices**.
+
+**4. Deploying changes later:**
+
+```bash
+./deploy/push.sh root@YOUR_SERVER_IP --code
+```
+
+> **Stop the Mac listener before starting the server one.** WhatsApp allows several linked
+> devices, so both will happily process the same messages and send you every task card twice.
+
+Logs:
+
+```bash
+ssh root@YOUR_SERVER_IP 'journalctl -u digimerchant -f'
+```
+
+Going live once the dry run looks right:
+
+```bash
+ssh root@YOUR_SERVER_IP 'sudo -u digimerchant node /opt/digimerchant/scripts/reset-queue.js   && sed -i "s/^DRY_RUN=true/DRY_RUN=false/" /opt/digimerchant/.env   && systemctl restart digimerchant'
+```
+
+---
+
+## The long version
+
+What `setup.sh` does, if you'd rather run it by hand or need to debug it.
+
 ## 1. Pick a box
 
 **2 GB RAM minimum.** This runs a real Chromium; on 1 GB it will be killed by the OOM
