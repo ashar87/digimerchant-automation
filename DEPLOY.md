@@ -198,6 +198,33 @@ electricity supply and your broadband.
 Use **64-bit Raspberry Pi OS Lite** — headless, no desktop. A 32-bit OS will fight you
 on both Node and Chromium.
 
+### If you're buying a Pi 4 (bare board)
+
+A board on its own won't run. You also need:
+
+| Part | Why it matters |
+|---|---|
+| **Official USB-C PSU** (5.1V / 3A) | Not a phone charger. Under-voltage on a Pi 4 causes random crashes and filesystem corruption that look exactly like software bugs. This is the most common cause of "my Pi is unreliable". |
+| **USB3 SSD + enclosure** | See below. A Pi 4 has no NVMe slot, so USB3 is the route. 120 GB is plenty. |
+| **Case with active or heatsink cooling** | A Pi 4 throttles under sustained load and runs hot 24/7. A passive heatsink case is the minimum; a quiet fan case is better. |
+
+A starter kit bundling PSU, case and heatsinks is often cheaper than buying them
+separately — but check whether its storage is a microSD, and plan to ignore it if so.
+
+You do **not** need a micro-HDMI cable, keyboard or monitor. Flash the SD/SSD with
+Raspberry Pi Imager, enable SSH and your Wi-Fi/Ethernet in its settings screen before
+writing, and drive the whole thing over SSH.
+
+Two Pi 4 specifics:
+
+- **USB boot** is enabled by default on Pi 4s made since around 2020. On an older
+  board, boot once from microSD and run `sudo raspi-config` → Advanced → Bootloader
+  Version → Latest, then move to the SSD.
+- **Some USB3 SSD enclosures** (certain JMicron and ASMedia chipsets) misbehave on a Pi 4
+  under UAS and need a `usb-storage.quirks` line in `/boot/cmdline.txt`. If the Pi hangs
+  or drops the disk under load, that's the cause — search the enclosure's chipset ID
+  plus "Pi 4 quirks".
+
 ### Boot from an SSD, not a microSD card
 
 The single most important choice. This writes continuously — SQLite in WAL mode, the
