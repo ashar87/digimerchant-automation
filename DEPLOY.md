@@ -74,8 +74,17 @@ cd digimerchant
 sudo -u digimerchant npm ci --omit=dev
 ```
 
-`PUPPETEER_SKIP_DOWNLOAD=1 npm ci` skips the 150 MB Chromium download if you prefer,
-since the service uses the apt one.
+On **ARM** (Hetzner CAX, Raspberry Pi, Ampere) this is not optional:
+
+```bash
+sudo -u digimerchant PUPPETEER_SKIP_DOWNLOAD=1 npm ci --omit=dev
+```
+
+Puppeteer publishes no arm64 Linux Chromium. Left to itself it downloads the **x86-64**
+build, the install succeeds, and the browser then fails to launch with an opaque error
+that looks like a bug in this project. The app now detects ARM without
+`PUPPETEER_EXECUTABLE_PATH` and says so on startup, but skipping the download avoids
+the wasted 150 MB.
 
 ## 4. Move your secrets and config across
 
@@ -164,6 +173,93 @@ sudo -u digimerchant git pull
 sudo -u digimerchant npm ci --omit=dev
 systemctl restart digimerchant
 ```
+
+---
+
+## Running it on a Raspberry Pi instead
+
+A good fit for this project, and arguably better than a VPS on the thing that matters
+most here: **your WhatsApp session and your business chats never leave your house.**
+Given these chats carry supplier pricing, margins and market research, that is a real
+advantage over trusting a rented box.
+
+The trade is reliability. A VPS has redundant power and network; a Pi has your
+electricity supply and your broadband.
+
+### Which Pi
+
+| Model | Verdict |
+|---|---|
+| Pi 5 (4 GB or 8 GB) | Best. Comfortable headroom, NVMe via HAT. |
+| Pi 4 (4 GB or 8 GB) | Fine. This workload is mostly idle. |
+| Pi 4 (2 GB) | Tight but workable if nothing else runs on it. |
+| Pi Zero 2 W, Pi 3, any 1 GB model | **No.** Chromium will be OOM-killed. |
+
+Use **64-bit Raspberry Pi OS Lite** — headless, no desktop. A 32-bit OS will fight you
+on both Node and Chromium.
+
+### Boot from an SSD, not a microSD card
+
+The single most important choice. This writes continuously — SQLite in WAL mode, the
+Chromium profile, journald — and a microSD will wear out and then corrupt, usually
+months in and always without warning. Worse, a power cut mid-write can corrupt the card
+outright and cost you the WhatsApp session.
+
+Use a USB3 SSD, or an NVMe HAT on a Pi 5. If you must use a microSD, add `log2ram` to
+keep journald out of it, and take a copy of `data/wa-session` somewhere safe.
+
+Use the **official power supply**. Under-voltage on a Pi shows up as random crashes
+that look like software faults.
+
+### Setup differences
+
+Everything above applies, with three changes:
+
+```bash
+sudo apt install -y chromium-browser        # the package is named differently on Pi OS
+which chromium-browser || which chromium    # confirm the path
+```
+
+Then in the systemd unit, point at what `which` reported:
+
+```ini
+Environment=PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+```
+
+And install with the ARM flag:
+
+```bash
+PUPPETEER_SKIP_DOWNLOAD=1 npm ci --omit=dev
+```
+
+Paths differ too — use `/home/pi/digimerchant` and your own user rather than creating a
+`digimerchant` system user, unless you want the separation.
+
+### What you don't need
+
+**No port forwarding, and no static IP.** The app only makes outbound connections — it
+never accepts one. Nothing about this needs to be reachable from the internet, which
+removes the usual reason self-hosting is risky.
+
+### Power cuts
+
+The app exits when WhatsApp disconnects and systemd restarts it, so a brief network drop
+self-heals. A power cut is different: messages that arrive while the Pi is off are gone,
+because linked devices get no backlog. `CATCH_UP_MINUTES` in `.env` recovers a short
+window after a restart — raise it to `60` on a Pi if your power is unreliable.
+
+A small UPS is worth it if you get cuts, mostly to protect the filesystem rather than
+uptime.
+
+### Pi or VPS?
+
+- **Pi** if you already have one, or if keeping the WhatsApp session and chat content in
+  your own house matters to you. It does cost more up front (~£60–100) but nothing
+  monthly, so it pays back against a £4/month VPS in about eighteen months.
+- **VPS** if uninterrupted capture matters more than data residency, or if you would
+  rather not have another device to look after.
+
+Either way the code, the systemd unit and the logging are identical.
 
 ---
 

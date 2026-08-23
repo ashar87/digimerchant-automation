@@ -15,6 +15,7 @@ const { Client, LocalAuth } = pkg;
 export function createWhatsAppClient() {
   // A previous run killed mid-flight would otherwise cost you a fresh QR scan.
   clearStaleChromeLocks(config.sessionPath);
+  warnIfArmWithoutSystemChromium();
 
   const client = new Client({
     authStrategy: new LocalAuth({ dataPath: config.sessionPath }),
@@ -54,6 +55,23 @@ export function createWhatsAppClient() {
   });
 
   return client;
+}
+
+/**
+ * On ARM Linux (Raspberry Pi, Hetzner CAX, Ampere) Puppeteer resolves its Chromium
+ * download to the linux64 x86-64 build — it does not publish an arm64 Linux build.
+ * The install succeeds and the launch then fails with an opaque error. Say so up
+ * front instead of letting it look like a bug in this project.
+ */
+function warnIfArmWithoutSystemChromium() {
+  const isArmLinux = process.platform === 'linux' && process.arch === 'arm64';
+  if (!isArmLinux || process.env.PUPPETEER_EXECUTABLE_PATH) return;
+
+  log.error('ARM Linux detected with no PUPPETEER_EXECUTABLE_PATH set.');
+  log.error("Puppeteer has no arm64 Linux Chromium — it downloads the x86-64 build, which cannot run here.");
+  log.error('Fix:  sudo apt install -y chromium   (or chromium-browser on Raspberry Pi OS)');
+  log.error('Then: export PUPPETEER_EXECUTABLE_PATH=$(which chromium || which chromium-browser)');
+  log.error('See DEPLOY.md. Continuing, but the browser will probably fail to launch.');
 }
 
 /**
