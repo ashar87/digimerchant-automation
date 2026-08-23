@@ -1,0 +1,21 @@
+{
+  "_comment": "Only chats listed here are ever read. Run `npm run chats` to print your chat IDs, then copy the ones you want in. Delete this file's _comment keys if you like.",
+  "watch": [
+    {
+      "id": "447700900123@c.us",
+      "label": "Rafay (VA)",
+      "context": "Rafay is our UK-based VA. He handles PPC optimisation and listing improvements. Tasks from him are usually PPC bid changes, keyword work, A+ content, listing copy fixes."
+    },
+    {
+      "id": "120363000000000000@g.us",
+      "label": "Digi Merchant Ops (group)",
+      "context": "Group with Atif (business partner, Spain) and Rafay (VA). Covers inventory reordering, supplier chasing, VAT/compliance, PPC, and new product research for edible gold leaf and nail foil wraps."
+    }
+  ],
+  "people": {
+    "_comment": "Maps names people use in chat to the canonical assignee name written to Notion.",
+    "Ashar": ["ashar", "me", "you"],
+    "Atif": ["atif"],
+    "Rafay": ["rafay", "rafey", "raf"]
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "digimerchant-automation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "WhatsApp -> Claude task extraction -> approval -> Notion task board, for Digi Merchant FBA ops.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "chats": "node scripts/list-chats.js",
+    "setup:notion": "node scripts/setup-notion.js",
+    "replay": "node scripts/replay.js",
+    "models": "node scripts/models.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.71.0",
+    "@google/genai": "^2.18.0",
+    "@notionhq/client": "^2.3.0",
+    "better-sqlite3": "^11.10.0",
+    "dotenv": "^17.2.3",
+    "exceljs": "^4.4.0",
+    "qrcode-terminal": "^0.12.0",
+    "whatsapp-web.js": "^1.34.1"
+  }
+}
