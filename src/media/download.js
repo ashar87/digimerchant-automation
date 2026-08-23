@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { config } from '../config.js';
 import { log } from '../logger.js';
+import { withRetry } from '../providers/retry.js';
 
 fs.mkdirSync(config.mediaCachePath, { recursive: true });
 
@@ -55,12 +56,29 @@ export async function downloadAttachment(msg, described) {
 
   let media;
   try {
-    media = await msg.downloadMedia();
+    // Media often isn't resolved on the linked device the instant the message
+    // arrives — the phone may still be re-uploading it. A couple of retries turns
+    // most of these failures into successes.
+    media = await withRetry(() => msg.downloadMedia(), {
+      attempts: 3,
+      baseMs: 1500,
+      label: `download ${described.type}`,
+    });
   } catch (err) {
-    log.warn(`could not download ${described.type} from ${described.author}:`, err.message);
+    log.warn(`could not download ${described.type} from ${described.author}: ${describeError(err)}`);
+    if (described.type === 'ptt' || described.type === 'audio') {
+      log.warn('  a voice note was missed. Usual cause: your phone was offline or had not');
+      log.warn('  re-uploaded the media yet. Linked devices cannot fetch media on their own.');
+    }
     return null;
   }
-  if (!media?.data) return null;
+
+  // downloadMedia resolves to undefined (rather than throwing) when WhatsApp
+  // reports the media as expired, still fetching, or in an error state.
+  if (!media?.data) {
+    log.warn(`${described.type} from ${described.author} is not available on this device (expired or still uploading)`);
+    return null;
+  }
 
   const kind = classify(described.type, media.mimetype);
   if (!kind || !isEnabled(kind)) return null;
@@ -86,6 +104,34 @@ export function cacheToDisk(attachment, id) {
   const file = path.join(config.mediaCachePath, `${id.replace(/[^\w-]/g, '_')}.${ext}`);
   fs.writeFileSync(file, Buffer.from(attachment.data, 'base64'));
   return file;
+}
+
+/**
+ * Errors thrown inside the browser page lose their message when they cross the
+ * Puppeteer boundary, so `err.message` alone is often an empty string. Pull out
+ * whatever identifying detail survived.
+ */
+function describeError(err) {
+  const parts = [
+    err?.name && err.name !== 'Error' ? err.name : null,
+    err?.status ? `status ${err.status}` : null,
+    err?.code || null,
+    err?.message || null,
+  ].filter(Boolean);
+
+  if (parts.length) return parts.join(' · ');
+
+  const str = String(err);
+  if (str && str !== '[object Object]' && str !== 'Error') return str;
+
+  const firstStackLine = String(err?.stack || '').split('\n')[0];
+  if (firstStackLine) return firstStackLine;
+
+  try {
+    return JSON.stringify(err) || '(no detail available)';
+  } catch {
+    return '(no detail available)';
+  }
 }
 
 function extensionFor(mime) {

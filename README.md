@@ -229,6 +229,14 @@ Anything else you type to yourself is left alone — it's still your notes chat.
 
 ## How media is handled
 
+**If a voice note can't be read, you get told.** Linked devices don't hold media
+themselves — the phone has to re-upload it. If your phone is offline, asleep, or slow, the
+download fails and the message would otherwise vanish without trace, which is exactly the
+"am I missing something important?" failure this system exists to prevent. Downloads are
+retried three times, and if they still fail you get an alert in your self-chat naming the
+sender and chat. Alerts are throttled to one per chat per 15 minutes, because an offline
+phone fails every voice note in a row.
+
 One format gotcha: WhatsApp voice notes are **OGG/Opus**, and Google's docs list OGG
 *Vorbis* among supported formats. The native attempt is tried first, and if it's rejected
 the audio is re-encoded to MP3 with ffmpeg and retried once (`brew install ffmpeg`), rather

@@ -75,6 +75,10 @@ client.on('message_create', async (msg) => {
     // Text, voice notes, images, PDFs and spreadsheets all end up as one shape here.
     const buffered = await toBufferMessage(msg, m);
     if (!buffered) return;
+    if (buffered.missed) {
+      await reportGap(watched.label, buffered);
+      return;
+    }
     log.debug(`[${watched.label}] ${m.author}: ${(buffered.body || '').slice(0, 80)}`);
 
     buffer.add(m.chatId, {
@@ -88,6 +92,39 @@ client.on('message_create', async (msg) => {
     log.error('message handler:', err.message);
   }
 });
+
+/* ---------- gaps ---------- */
+
+/**
+ * Something was said that we could not read. Silence here would defeat the point
+ * of the system, so tell Ashar — but throttled, because a phone that is offline
+ * will fail every voice note in a row and he does not need twenty messages.
+ */
+const gapWindowMs = 15 * 60 * 1000;
+const gaps = new Map(); // chatLabel -> { count, first, timer }
+
+async function reportGap(chatLabel, { missed, author }) {
+  log.warn(`MISSED a ${missed} from ${author} in "${chatLabel}"`);
+
+  const entry = gaps.get(chatLabel) || { count: 0, first: Date.now(), timer: null, author, missed };
+  entry.count++;
+  entry.author = author;
+  entry.missed = missed;
+  gaps.set(chatLabel, entry);
+
+  if (entry.timer) return; // an alert is already queued for this chat
+  entry.timer = setTimeout(async () => {
+    gaps.delete(chatLabel);
+    const since = new Date(entry.first).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    const plural = entry.count === 1 ? `a ${entry.missed}` : `${entry.count} ${entry.missed}s`;
+    await approval.send(
+      `⚠️ Couldn't read ${plural} from ${entry.author} in *${chatLabel}* since ${since}.\n\n` +
+        `Nothing from ${entry.count === 1 ? 'it' : 'them'} has been checked for tasks — worth a look yourself.\n` +
+        `Usual cause: your phone was offline, so it never re-uploaded the audio.`
+    ).catch((err) => log.error('could not send gap alert:', err.message));
+  }, gapWindowMs);
+  entry.timer.unref?.();
+}
 
 /* ---------- lifecycle ---------- */
 

@@ -17,13 +17,16 @@ export async function toBufferMessage(msg, m) {
 
   const attachment = await downloadAttachment(msg, m);
   if (!attachment) {
-    // Unsupported or oversized media — keep the caption, it may still carry the ask.
-    return m.body ? { ...base, body: m.body } : null;
+    if (m.body) return { ...base, body: m.body };
+    // A voice note we couldn't fetch is a genuine gap: someone spoke and we have
+    // no idea what they said. Report it rather than dropping it silently.
+    if (m.type === 'ptt' || m.type === 'audio') return { missed: 'voice note', author: m.author };
+    return null;
   }
 
   if (attachment.kind === 'audio') {
     const text = await transcribe(attachment, m.id);
-    if (!text) return null;
+    if (!text) return { missed: 'voice note (transcription failed)', author: m.author };
     log.debug(`voice note from ${m.author}: "${text.slice(0, 100)}"`);
     return { ...base, body: text, isVoiceNote: true };
   }
