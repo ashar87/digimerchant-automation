@@ -13,8 +13,8 @@ Budget about 30 minutes.
 Two commands from your Mac, then scan a QR code.
 
 **1. Create a server.** Debian 12 or Ubuntu 24.04, **2 GB RAM minimum** (this runs a real
-Chromium; 1 GB gets OOM-killed hours in and looks like a bug). Hetzner CX22 ~€4.50/mo,
-or CAX11 ARM ~€4/mo — ARM is fine, the scripts handle it. Add your SSH key when creating it.
+Chromium; 1 GB gets OOM-killed hours in and looks like a bug). Add your SSH key when
+creating it. See [Where to host](#where-to-host) for options — any plain VM works.
 
 **2. Push and set up:**
 
@@ -50,6 +50,58 @@ Going live once the dry run looks right:
 ```bash
 ssh root@YOUR_SERVER_IP 'sudo -u digimerchant node /opt/digimerchant/scripts/reset-queue.js   && sed -i "s/^DRY_RUN=true/DRY_RUN=false/" /opt/digimerchant/.env   && systemctl restart digimerchant'
 ```
+
+---
+
+## Where to host
+
+The requirements are narrow: a **plain Linux VM**, **2 GB RAM**, a **persistent disk**, and
+the ability to run a long-lived process. Any of these work with `deploy/push.sh` unchanged.
+
+| Host | 2 GB plan | Region | Notes |
+|---|---|---|---|
+| **Hetzner** CX22 / CAX11 | ~€4.50 / ~€4 | DE, FI, US | Cheapest credible option. CAX is ARM — fine, the scripts handle it. |
+| **OVHcloud** VPS | ~£5 | UK, FR | Has a **UK** datacentre if you'd rather keep data in the UK. |
+| **DigitalOcean** | ~$12 | London | Priciest of these, but the least friction — good docs, clean console. |
+| **Vultr** | ~$10 | London | Similar to DO, slightly cheaper. |
+| **Linode / Akamai** | ~$12 | London | Long-established, solid. |
+| **AWS Lightsail** | ~$10 | London | Worth it only if you already live in AWS. |
+| **Oracle Cloud Free Tier** | **£0** | UK, DE | 4 ARM cores / 24 GB genuinely free forever. See the caveat below. |
+
+### Oracle's free tier
+
+Real, and generously sized. Two honest caveats: ARM capacity is frequently unavailable in
+popular regions and you may have to retry for days, and Oracle has been known to reclaim
+idle free-tier instances. For something you want running unattended for months, that's a
+meaningful risk against saving £4/month. Fine if you enjoy the tinkering; not what I'd
+rely on.
+
+### A spare laptop or mini PC
+
+If you have an old laptop gathering dust, it beats a Raspberry Pi for this: x86 so no ARM
+Chromium issues, a real SSD instead of an SD card, and **a battery, which is a built-in
+UPS**. Install Ubuntu Server, set `HandleLidSwitch=ignore` in `/etc/systemd/logind.conf`
+so closing the lid doesn't suspend it, and run `deploy/setup.sh` exactly as written.
+
+Same trade as the Pi, though: your power and broadband, and a power cut loses messages
+outright because linked devices receive no backlog.
+
+### What does not work
+
+- **Anything under 2 GB.** Chromium gets OOM-killed hours in, looking like a bug.
+- **Vercel, Lambda, Cloud Run and similar.** A WhatsApp Web session needs a long-lived
+  process and a persistent disk; serverless gives you neither.
+- **Container platforms with ephemeral disks** (default Railway, Render free). The session
+  in `data/` must survive restarts or you re-scan the QR every deploy. Workable only with
+  a real persistent volume attached.
+
+### Does jurisdiction matter here?
+
+Only a little, and worth being clear about it. The chat content is sent to **Google** for
+extraction regardless of where this runs, so hosting in the UK doesn't keep the messages
+in the UK. What the server holds is the WhatsApp session token, cached transcripts and
+message ids. If that distinction matters to you, pick a UK region (OVH, DigitalOcean,
+Vultr, Linode); otherwise Hetzner's EU datacentres are fine under GDPR.
 
 ---
 
