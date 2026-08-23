@@ -2,6 +2,7 @@ import { config } from '../config.js';
 import { log } from '../logger.js';
 import { getProvider } from '../providers/index.js';
 import { systemPrompt, userPrompt } from './prompt.js';
+import { today } from '../util/time.js';
 
 /**
  * Sends one buffered conversation to the model and returns the task candidates.
@@ -9,8 +10,8 @@ import { systemPrompt, userPrompt } from './prompt.js';
  */
 export async function extractTasks({ chatId, chatLabel, chatContext, isGroup, messages, people, provider, unknownAssignee }) {
   const model = getProvider(provider);
-  const today = new Date().toISOString().slice(0, 10);
-  const { text, attachments } = userPrompt({ chatLabel, chatContext, isGroup, messages, today });
+  const todayLocal = today();
+  const { text, attachments } = userPrompt({ chatLabel, chatContext, isGroup, messages, today: todayLocal });
 
   // Drop attachments this provider can't take (Claude has no audio path).
   const usable = attachments.filter((a) => a.kind !== 'audio' || model.supportsAudio);

@@ -53,6 +53,9 @@ export const config = {
   catchUpMinutes: num(process.env.CATCH_UP_MINUTES, 0),
   expirePendingDays: num(process.env.EXPIRE_PENDING_DAYS, 7),
 
+  // The business's timezone, not the server's — see src/util/time.js.
+  timezone: process.env.TZ || 'Europe/London',
+
   dbPath: path.join(ROOT, 'data', 'automation.db'),
   sessionPath: path.join(ROOT, 'data', 'wa-session'),
   mediaCachePath: path.join(ROOT, 'data', 'media'),

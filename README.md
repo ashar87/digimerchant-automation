@@ -361,9 +361,9 @@ Google (or Anthropic). Use a billing-enabled key so it isn't training data. If a
 chat is too sensitive for that, leave it out of the allowlist — or run
 `TRANSCRIBER=whisper-local` so at least the audio stays on your Mac.
 
-**Uptime.** Your Mac must be awake to catch messages. `CATCH_UP_MINUTES` handles short
-gaps. Once you trust it, move it to a small always-on VPS (~£4/month) — nothing in the code
-is Mac-specific.
+**Uptime.** Your Mac must be awake to catch messages — a sleeping Mac catches nothing and
+there is no backlog to recover. `CATCH_UP_MINUTES` handles only short gaps. For a real
+always-on setup, see **[DEPLOY.md](DEPLOY.md)** (~£4/month VPS, about 30 minutes).
 
 ---
 

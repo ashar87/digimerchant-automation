@@ -20,7 +20,17 @@ export function createWhatsAppClient() {
     authStrategy: new LocalAuth({ dataPath: config.sessionPath }),
     puppeteer: {
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+      // On a server, install the distro's chromium and point at it — apt pulls in
+      // the shared libraries Puppeteer's bundled build would otherwise need.
+      ...(process.env.PUPPETEER_EXECUTABLE_PATH
+        ? { executablePath: process.env.PUPPETEER_EXECUTABLE_PATH }
+        : {}),
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage', // /dev/shm is tiny on most VPSs; Chromium crashes without this
+        '--disable-gpu',
+      ],
     },
   });
 

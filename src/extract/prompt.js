@@ -1,3 +1,5 @@
+import { clockTime, weekday } from '../util/time.js';
+
 /**
  * The prompt is where nearly all of the quality lives. It teaches the model what
  * Digi Merchant work looks like so it can tell a real commitment ("Rafay, drop the
@@ -92,7 +94,7 @@ export function userPrompt({ chatLabel, chatContext, isGroup, messages, today })
   const lines = [];
 
   for (const m of [...messages].sort((a, b) => a.timestamp - b.timestamp)) {
-    const time = new Date(m.timestamp * 1000).toISOString().slice(11, 16);
+    const time = clockTime(m.timestamp);
     const refs = [];
 
     for (const a of m.attachments || []) {
@@ -106,7 +108,7 @@ export function userPrompt({ chatLabel, chatContext, isGroup, messages, today })
     lines.push(`[${time}] ${speaker}: ${[body, ...refs].filter(Boolean).join(' ')}`);
   }
 
-  const text = `Today's date: ${today} (${new Date(today).toLocaleDateString('en-GB', { weekday: 'long' })})
+  const text = `Today's date: ${today} (${weekday(today)})
 Chat: ${chatLabel}${isGroup ? ' (group)' : ' (direct message)'}
 ${chatContext ? `Context about this chat: ${chatContext}` : ''}
 

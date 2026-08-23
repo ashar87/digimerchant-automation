@@ -3,6 +3,7 @@ import { log } from '../logger.js';
 import * as store from '../store/db.js';
 import { createTask, ensureSelectOption } from '../tasks/notion.js';
 import { messageKey } from './ids.js';
+import { shortDate } from '../util/time.js';
 
 /** IDs of messages this bot sent. They come back through message_create as fromMe. */
 const sentByBot = new Set();
@@ -178,9 +179,6 @@ function parseVerb(text) {
   return null;
 }
 
-function formatDue(iso) {
-  const d = new Date(iso + 'T12:00:00');
-  return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
-}
+const formatDue = (iso) => shortDate(iso);
 
 const truncate = (s, n) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
