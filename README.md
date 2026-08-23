@@ -327,6 +327,25 @@ Tuning knobs live in `.env`; the actual judgement lives in `src/extract/prompt.j
 
 ---
 
+## A note on whatsapp-web.js drift
+
+WhatsApp Web changes its internals; the library follows behind. Three of its APIs are
+broken against the current build, and all three are worked around here rather than waited on:
+
+| Broken | Symptom | Worked around by |
+|---|---|---|
+| `msg.id._serialized` | undefined everywhere — silently broke dedupe, the transcript cache, reply-to-approve, and media downloads | [`src/whatsapp/ids.js`](src/whatsapp/ids.js) builds the key from `{fromMe, remote, id}` |
+| `Msg.get()` / `getMessagesById()` | throws a minified `r`; also breaks `client.getMessageById()` | [`src/whatsapp/media.js`](src/whatsapp/media.js) matches the loaded collection on the message hash |
+| `client.getChats()` | one unserialisable chat rejects the whole listing | [`scripts/list-chats.js`](scripts/list-chats.js) reads the raw collection, skipping bad entries |
+
+`npm run diagnose:media` is the tool for the next one of these. It catches errors *inside*
+the page and serialises them there — errors thrown in page context arrive at Node with an
+empty message, which is why the original failure logged as nothing at all.
+
+If media or dedupe breaks again after a WhatsApp update, run it first.
+
+---
+
 ## Risks, stated plainly
 
 **WhatsApp.** This uses `whatsapp-web.js`, which drives a real WhatsApp Web session. It is

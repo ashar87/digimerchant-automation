@@ -2,6 +2,7 @@ import { config } from '../config.js';
 import { log } from '../logger.js';
 import * as store from '../store/db.js';
 import { createTask, ensureSelectOption } from '../tasks/notion.js';
+import { messageKey } from './ids.js';
 
 /** IDs of messages this bot sent. They come back through message_create as fromMe. */
 const sentByBot = new Set();
@@ -16,7 +17,8 @@ export function createApprovalFlow(client) {
       return null;
     }
     const msg = await client.sendMessage(selfChatId(), text);
-    sentByBot.add(msg.id._serialized);
+    const key = messageKey(msg.id);
+    if (key) sentByBot.add(key);
     return msg;
   }
 
@@ -41,7 +43,7 @@ export function createApprovalFlow(client) {
       .join('\n');
 
     const msg = await send(text);
-    if (msg) store.attachApprovalMessage(candidate.ref, msg.id._serialized);
+    if (msg) store.attachApprovalMessage(candidate.ref, messageKey(msg.id));
     log.info(`asked for approval [${candidate.ref}] ${candidate.title}`);
   }
 
@@ -60,7 +62,7 @@ export function createApprovalFlow(client) {
     // 1. Reply-to-card form: quote the card and just say Y / N / E <title>
     if (described.hasQuotedMsg) {
       const quoted = await msg.getQuotedMessage();
-      const candidate = store.getCandidateByApprovalMsg(quoted.id._serialized);
+      const candidate = store.getCandidateByApprovalMsg(messageKey(quoted.id));
       if (candidate) {
         const parsed = parseVerb(body);
         if (!parsed) {

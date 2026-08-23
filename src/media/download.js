@@ -3,6 +3,7 @@ import path from 'node:path';
 import { config } from '../config.js';
 import { log } from '../logger.js';
 import { withRetry } from '../providers/retry.js';
+import { downloadMediaDirect } from '../whatsapp/media.js';
 
 fs.mkdirSync(config.mediaCachePath, { recursive: true });
 
@@ -59,9 +60,15 @@ export async function downloadAttachment(msg, described) {
     // Media often isn't resolved on the linked device the instant the message
     // arrives — the phone may still be re-uploading it. A couple of retries turns
     // most of these failures into successes.
-    media = await withRetry(() => msg.downloadMedia(), {
+    media = await withRetry(async () => {
+      // Direct decrypt first — the library's wrapper throws on unresolved media.
+      const direct = await downloadMediaDirect(msg).catch(() => null);
+      if (direct?.data) return direct;
+      return msg.downloadMedia();
+    }, {
       attempts: 3,
       baseMs: 1500,
+      always: true, // page errors carry no status or message to classify
       label: `download ${described.type}`,
     });
   } catch (err) {

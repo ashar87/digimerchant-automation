@@ -7,8 +7,12 @@ const TRANSIENT_CODES = new Set(['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'EPI
  * Model APIs return 503 "high demand" often enough that a single attempt loses
  * real work — and a dropped conversation here means a task you never hear about.
  * Retries transient failures only; a bad key or a malformed request fails fast.
+ *
+ * Pass `always: true` for work that is racy rather than erroring — media downloads
+ * throw minified errors with no status or message, so they'd never match the
+ * transient test even though retrying genuinely helps.
  */
-export async function withRetry(fn, { attempts = 4, baseMs = 800, label = 'request' } = {}) {
+export async function withRetry(fn, { attempts = 4, baseMs = 800, label = 'request', always = false } = {}) {
   let lastErr;
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
@@ -16,7 +20,7 @@ export async function withRetry(fn, { attempts = 4, baseMs = 800, label = 'reque
       return await fn();
     } catch (err) {
       lastErr = err;
-      if (!isTransient(err) || attempt === attempts) throw err;
+      if ((!always && !isTransient(err)) || attempt === attempts) throw err;
 
       // Exponential backoff with jitter, so parallel chats don't retry in lockstep.
       const wait = Math.round(baseMs * 2 ** (attempt - 1) * (0.5 + Math.random()));

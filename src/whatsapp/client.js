@@ -3,6 +3,7 @@ import qrcode from 'qrcode-terminal';
 import { config } from '../config.js';
 import { log } from '../logger.js';
 import { clearStaleChromeLocks } from './session.js';
+import { messageKey, widString } from './ids.js';
 
 const { Client, LocalAuth } = pkg;
 
@@ -53,11 +54,11 @@ export function createWhatsAppClient() {
  * takes the whole message down with it. The chat JID is already on the message.
  */
 export async function describeMessage(msg) {
-  const chatId = msg.id?.remote || (msg.fromMe ? msg.to : msg.from);
+  const chatId = widString(msg.id?.remote) || widString(msg.fromMe ? msg.to : msg.from);
   const isGroup = String(chatId).endsWith('@g.us');
 
   return {
-    id: msg.id._serialized,
+    id: messageKey(msg.id),
     chatId,
     isGroup,
     fromMe: msg.fromMe,

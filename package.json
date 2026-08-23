@@ -15,7 +15,8 @@
     "models": "node scripts/models.js",
     "verify": "node scripts/verify-chats.js",
     "dry": "DRY_RUN=true DEBUG=1 node src/index.js",
-    "reset:queue": "node scripts/reset-queue.js"
+    "reset:queue": "node scripts/reset-queue.js",
+    "diagnose:media": "node scripts/diagnose-media.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.0",
