@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { config } from '../config.js';
 import { anthropicTool } from './schema.js';
+import { withRetry } from './retry.js';
 
 let client;
 const api = () => (client ??= new Anthropic({ apiKey: config.anthropicApiKey }));
@@ -29,14 +30,14 @@ export async function extract({ system, text, attachments = [] }) {
   const hasVisual = attachments.some((a) => a.kind === 'image' || a.kind === 'pdf');
   const model = hasVisual ? config.anthropicVisionModel : config.anthropicModel;
 
-  const res = await api().messages.create({
+  const res = await withRetry(() => api().messages.create({
     model,
     max_tokens: 2000,
     system,
     tools: [anthropicTool],
     tool_choice: { type: 'tool', name: anthropicTool.name },
     messages: [{ role: 'user', content }],
-  });
+  }), { label: `anthropic/${model}` });
 
   const block = res.content.find((b) => b.type === 'tool_use');
   return {

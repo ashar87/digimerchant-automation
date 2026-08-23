@@ -1,6 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 import { config } from '../config.js';
 import { geminiSchema } from './schema.js';
+import { withRetry } from './retry.js';
 
 let client;
 const api = () => (client ??= new GoogleGenAI({ apiKey: config.geminiApiKey }));
@@ -29,7 +30,7 @@ export async function extract({ system, text, attachments = [] }) {
   const hasVisual = attachments.some((a) => VISUAL.has(a.kind));
   const model = hasVisual ? config.geminiVisionModel : config.geminiModel;
 
-  const res = await api().models.generateContent({
+  const res = await withRetry(() => api().models.generateContent({
     model,
     contents: [{ role: 'user', parts }],
     config: {
@@ -38,7 +39,7 @@ export async function extract({ system, text, attachments = [] }) {
       responseSchema: geminiSchema,
       temperature: 0,
     },
-  });
+  }), { label: `gemini/${model}` });
 
   let tasks = [];
   try {
@@ -56,7 +57,7 @@ export async function extract({ system, text, attachments = [] }) {
  * for this business — sentences that switch between them mid-flow.
  */
 export async function transcribeAudio({ mime, data }) {
-  const res = await api().models.generateContent({
+  const res = await withRetry(() => api().models.generateContent({
     model: config.transcribeModel,
     contents: [
       {
@@ -75,7 +76,7 @@ export async function transcribeAudio({ mime, data }) {
       },
     ],
     config: { temperature: 0 },
-  });
+  }), { label: `transcribe/${config.transcribeModel}` });
 
   return (res.text || '').trim();
 }
