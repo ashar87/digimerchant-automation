@@ -12,7 +12,8 @@
     "chats": "node scripts/list-chats.js",
     "setup:notion": "node scripts/setup-notion.js",
     "replay": "node scripts/replay.js",
-    "models": "node scripts/models.js"
+    "models": "node scripts/models.js",
+    "verify": "node scripts/verify-chats.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.0",
