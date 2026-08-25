@@ -15,6 +15,21 @@ say() { printf '\n\033[36m==>\033[0m %s\n' "$1"; }
 [ "$(id -u)" -eq 0 ] || { echo "Run as root."; exit 1; }
 [ -d "$APP_DIR" ] || { echo "No code at $APP_DIR — run deploy/push.sh from your Mac first."; exit 1; }
 
+TOTAL_MB=$(free -m | awk '/^Mem:/{print $2}')
+if [ "$TOTAL_MB" -lt 1800 ]; then
+  echo
+  echo "This box has ${TOTAL_MB}MB of RAM. Chromium needs about 2GB and will be"
+  echo "OOM-killed hours in, which looks like a bug rather than a memory limit."
+  echo "Resize before continuing, or set ALLOW_SMALL_RAM=1 to try anyway."
+  [ "${ALLOW_SMALL_RAM:-0}" = "1" ] || exit 1
+fi
+
+if ! command -v apt-get >/dev/null; then
+  echo "This script expects Debian or Ubuntu (apt). On Oracle Linux, pick an Ubuntu"
+  echo "image instead — or follow 'The long version' in DEPLOY.md using dnf."
+  exit 1
+fi
+
 say "Installing system packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
@@ -57,8 +72,16 @@ sed "s#^Environment=PUPPETEER_EXECUTABLE_PATH=.*#Environment=PUPPETEER_EXECUTABL
 systemctl daemon-reload
 systemctl enable digimerchant >/dev/null 2>&1
 
-say "Locking the firewall to SSH only (nothing inbound is needed)"
-if command -v ufw >/dev/null; then ufw allow OpenSSH >/dev/null && ufw --force enable >/dev/null; fi
+# Opt-in on purpose. Oracle Cloud images manage iptables directly and ship rules
+# that ufw does not know about; enabling ufw there has locked people out of their
+# own instances. Nothing inbound is needed for this app either way, and Oracle's
+# security list already blocks inbound at the network level.
+if [ "${ENABLE_UFW:-0}" = "1" ] && command -v ufw >/dev/null; then
+  say "Enabling ufw (SSH only)"
+  ufw allow OpenSSH >/dev/null && ufw --force enable >/dev/null
+else
+  say "Leaving the firewall alone (set ENABLE_UFW=1 to change that)"
+fi
 
 echo
 echo "Ready. Two things left, both on the server:"

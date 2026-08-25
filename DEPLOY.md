@@ -76,6 +76,22 @@ idle free-tier instances. For something you want running unattended for months, 
 meaningful risk against saving £4/month. Fine if you enjoy the tinkering; not what I'd
 rely on.
 
+**If you do use Oracle, four things differ from a normal VPS:**
+
+1. **Pick the right shape.** `VM.Standard.A1.Flex` (Ampere ARM) — give it at least
+   2 OCPUs and 6 GB, all within the free allowance. The other always-free shape,
+   `VM.Standard.E2.1.Micro`, has **1 GB and will not work**; Chromium is OOM-killed.
+2. **Choose the Ubuntu image**, not Oracle Linux. `setup.sh` uses apt.
+3. **You log in as `ubuntu`, not `root`.** Oracle disables root SSH. `push.sh` handles
+   this — just use `ubuntu@YOUR_IP`.
+4. **Do not enable ufw.** Oracle's images manage iptables directly with rules ufw doesn't
+   know about, and enabling it has locked people out of their own instances. `setup.sh`
+   leaves the firewall alone unless you pass `ENABLE_UFW=1`. You don't need it here:
+   nothing inbound is required, and Oracle's security list already blocks inbound at the
+   network level.
+
+ARM is fine — the scripts skip Puppeteer's x86-only Chromium download and use the apt one.
+
 ### A spare laptop or mini PC
 
 If you have an old laptop gathering dust, it beats a Raspberry Pi for this: x86 so no ARM
