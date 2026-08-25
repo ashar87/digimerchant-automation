@@ -99,6 +99,64 @@ rely on.
 
 ARM is fine — the scripts skip Puppeteer's x86-only Chromium download and use the apt one.
 
+### A Windows laptop
+
+Three routes, best first.
+
+**1. Wipe it and install Ubuntu Server.** If the laptop is genuinely spare, this is the
+cleanest answer by a distance: `deploy/setup.sh` runs unchanged, you get systemd, and
+everything in this document applies as written. Ubuntu Server 24.04, no desktop, SSH
+enabled. Then:
+
+```bash
+./deploy/push.sh youruser@LAPTOP_IP
+```
+
+**2. Keep Windows, run it in WSL2.** Works well, with one wrinkle — WSL doesn't start on
+its own at boot.
+
+```powershell
+wsl --install -d Ubuntu-24.04
+```
+
+Inside Ubuntu, turn on systemd (needed for the service):
+
+```bash
+printf '[boot]\nsystemd=true\n' | sudo tee /etc/wsl.conf
+```
+
+Then `wsl --shutdown` in PowerShell and reopen. From there, `deploy/setup.sh` works
+normally. To start it at boot, create a Task Scheduler task that runs at logon:
+
+```
+Program:   wsl.exe
+Arguments: -d Ubuntu-24.04 -u root /bin/true
+```
+
+That boots the distro; systemd then starts the service on its own.
+
+**3. Native Windows, no WSL.** The app itself is plain Node and will run — but there is no
+systemd, so `deploy/` doesn't apply and you'd manage the process with NSSM or Task
+Scheduler yourself. Voice-note fallback also needs a Windows `ffmpeg` on PATH. Workable,
+but you're maintaining it by hand. Only worth it if WSL is unavailable to you.
+
+### Stopping Windows from sleeping
+
+This is the part that actually decides whether it works. A sleeping laptop catches
+nothing, and there is no backlog to recover afterwards.
+
+```powershell
+powercfg /change standby-timeout-ac 0
+powercfg /change hibernate-timeout-ac 0
+powercfg /change monitor-timeout-ac 10
+```
+
+Then **Control Panel → Power Options → Choose what closing the lid does → When plugged in:
+Do nothing**, so you can shut the lid and leave it somewhere out of the way. Keep it on
+mains — on battery, Windows will sleep regardless of these settings.
+
+Set `CATCH_UP_MINUTES=60` in `.env` so a restart sweeps the last hour.
+
 ### A spare laptop or mini PC
 
 If you have an old laptop gathering dust, it beats a Raspberry Pi for this: x86 so no ARM
