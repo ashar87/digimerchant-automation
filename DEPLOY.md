@@ -12,9 +12,20 @@ Budget about 30 minutes.
 
 Two commands from your Mac, then scan a QR code.
 
-**1. Create a server.** Debian 12 or Ubuntu 24.04, **2 GB RAM minimum** (this runs a real
-Chromium; 1 GB gets OOM-killed hours in and looks like a bug). Add your SSH key when
-creating it. See [Where to host](#where-to-host) for options — any plain VM works.
+**1. Create a server.** **Debian 12 or 13** (see below on Ubuntu), **2 GB RAM minimum**
+— this runs a real Chromium, and 1 GB gets OOM-killed hours in, looking like a bug. Add
+your SSH key when creating it. See [Where to host](#where-to-host) for options.
+
+> **Prefer Debian over Ubuntu.** Debian ships a genuine `chromium` .deb. Ubuntu's
+> `chromium` / `chromium-browser` package is a transitional stub that installs a **snap**,
+> and snap-confined Chromium cannot write outside a few allowed paths — so it cannot open
+> the WhatsApp session profile under `/opt/digimerchant/data` and the login fails with no
+> obvious cause.
+>
+> `setup.sh` handles both: on Debian it uses the .deb, on **Ubuntu x86-64** it installs
+> Chromium's shared libraries and uses Puppeteer's own build instead. The one combination
+> that does not work is **Ubuntu on ARM** — snap on one side, no arm64 Puppeteer build on
+> the other — and the script stops with that explanation rather than failing later.
 
 **2. Push and set up:**
 
@@ -216,14 +227,14 @@ but data residency might, given what's in these chats.
 ssh root@YOUR_SERVER_IP
 
 apt update && apt upgrade -y
-apt install -y curl git chromium
+apt install -y curl git chromium        # Debian: a real .deb. On Ubuntu this is a snap — see above.
 curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
 apt install -y nodejs
 
 timedatectl set-timezone Europe/London
 ```
 
-Installing `chromium` from apt is deliberate — it pulls in the two dozen shared
+On Debian, installing `chromium` from apt is deliberate — it pulls in the two dozen shared
 libraries Puppeteer's bundled build needs but doesn't install.
 
 Add swap, so a memory spike stalls instead of killing the process:
