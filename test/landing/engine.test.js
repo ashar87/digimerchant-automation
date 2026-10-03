@@ -261,3 +261,13 @@ test('checks: invoice arithmetic, courier rate, and payments that do not add up'
   const rate = r.issues.find((i) => i.code === 'bill_rate_mismatch');
   assert.match(rate.message, /\$6\.15/); // 160 − 1000 / 6.5
 });
+
+test('a one-shipment bill that states only USD carries all of it to that shipment', () => {
+  const r = run({
+    shipments: [shipment('FBA1', 'UK', 'SHIPPED', [{ product: 'A-UK', shipped: 200 }])],
+    courierBills: [{ id: 'B1', lines: [{ kind: 'shipping', shipment: 'FBA1' }] }],
+    payments: [{ id: 'P1', date: '2026-02-12', usd: 100, qbRate: '0.8', allocations: [{ type: 'bill', target: 'B1', usd: 100 }] }],
+  });
+  assert.equal(fmt4(r.shipments[0].delivery.perUnit), '0.4000');
+  assert.ok(!codes(r).includes('bill_rmb_missing'));
+});

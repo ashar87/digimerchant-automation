@@ -399,6 +399,27 @@ that know about a model vendor. Swapping either is one new adapter, not a rewrit
 
 ---
 
+## Landing costs
+
+A second part of the project turns supplier invoices, Wise payments, FBA shipments and
+courier bills into a landing cost per unit. It has its own database (`data/landing.db`)
+and never touches the WhatsApp listener's.
+
+```bash
+npm run dashboard                                  # http://127.0.0.1:3210
+npm run landing:import -- private/import/open-orders.json --dry-run
+npm run landing:check                              # engine vs the sourcing sheet
+npm test
+```
+
+- `src/landing/engine.js` works out every cost from the source records each time; nothing is
+  typed into a result. `store.js` holds the records, with every change logged by name.
+- `src/dashboard/` is the private website: Inbox, orders, payments, shipments, courier bills,
+  costs, products and Annie's account. It listens on 127.0.0.1 only; other devices will reach
+  it through Tailscale, never a public address.
+- Real supplier figures live only in `private/` (gitignored): the import file and the test
+  fixtures. Committed tests use made-up numbers.
+
 ## What's next
 
 See [ROADMAP.md](ROADMAP.md). Headline: **attachment ingestion is built but switched off**

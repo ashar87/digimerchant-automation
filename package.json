@@ -19,7 +19,9 @@
     "diagnose:media": "node scripts/diagnose-media.js",
     "report": "node scripts/report.js",
     "test": "node --test 'test/**/*.test.js'",
-    "landing:check": "node scripts/landing-check.js"
+    "landing:check": "node scripts/landing-check.js",
+    "dashboard": "node src/dashboard/server.js",
+    "landing:import": "node scripts/landing-import.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.0",

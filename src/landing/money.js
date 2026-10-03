@@ -4,7 +4,7 @@ import Decimal from 'decimal.js';
 // never between steps, so a chain of splits can't drift by a penny.
 const Dec = Decimal.clone({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 
-/** Parses a number or numeric string ("1,437.67" is accepted). null/undefined/'' stay null. */
+/** Parses a number or numeric string ("1,234.56" is accepted). null/undefined/'' stay null. */
 export function D(v) {
   if (v === null || v === undefined || v === '') return null;
   if (v instanceof Dec) return v;

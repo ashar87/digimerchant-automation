@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS courier_bill_lines (
   seq         INTEGER NOT NULL,
   kind        TEXT NOT NULL CHECK (kind IN ('shipping','domestic','fee','adjustment','expense')),
   shipment    TEXT,                       -- FBA ID as printed on the bill
-  rmb         TEXT NOT NULL,
+  rmb         TEXT,                       -- may be blank only on a one-line bill that states USD alone
   description TEXT,
   category    TEXT
 );
@@ -124,6 +124,11 @@ CREATE TABLE IF NOT EXISTS shipment_items (
   received    TEXT
 );
 
+CREATE TABLE IF NOT EXISTS settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT
+);
+
 -- Both owners edit; every change records who and when.
 CREATE TABLE IF NOT EXISTS audit_log (
   id        INTEGER PRIMARY KEY,
@@ -142,7 +147,19 @@ export function openLandingDb(file) {
   if (file !== ':memory:') db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   db.exec(SCHEMA);
+  migrate(db);
   return db;
+}
+
+// Columns added after the first schema; guarded so existing databases upgrade in place.
+function migrate(db) {
+  const has = (table, column) => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+  const add = (table, column, type) => {
+    if (!has(table, column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  };
+  add('orders', 'review', "TEXT CHECK (review IN ('needs_review','reviewed') OR review IS NULL)"); // imported orders start as needs_review
+  add('orders', 'source', 'TEXT'); // e.g. the sheet tab an imported order came from
+  add('orders', 'import_notes', 'TEXT'); // JSON array shown when reviewing
 }
 
 const json = (v) => (v === undefined || v === null ? null : JSON.stringify(v));
@@ -165,14 +182,14 @@ export function saveLedger(db, ledger, { actor = 'import' } = {}) {
       log('product', p.id, p);
     }
 
-    const order = db.prepare(`INSERT INTO orders (po, supplier, marketplace, notes) VALUES (?, ?, ?, ?) ON CONFLICT(po) DO UPDATE SET supplier = excluded.supplier, marketplace = excluded.marketplace, notes = excluded.notes`);
+    const order = db.prepare(`INSERT INTO orders (po, supplier, marketplace, notes, review, source, import_notes) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(po) DO UPDATE SET supplier = excluded.supplier, marketplace = excluded.marketplace, notes = excluded.notes, review = excluded.review, source = excluded.source, import_notes = excluded.import_notes`);
     const clearInvoices = db.prepare('DELETE FROM invoices WHERE po = ?');
     const invoice = db.prepare('INSERT INTO invoices (id, po, kind, date, supplier_ref, stated_total_rmb, file_path) VALUES (?, ?, ?, ?, ?, ?, ?)');
     const line = db.prepare('INSERT INTO invoice_lines (invoice_id, seq, kind, product, qty, rmb, description, category) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
     const clearWriteOffs = db.prepare('DELETE FROM write_offs WHERE po = ?');
     const writeOff = db.prepare('INSERT INTO write_offs (po, product, qty, reason, date) VALUES (?, ?, ?, ?, ?)');
     for (const o of ledger.orders || []) {
-      order.run(o.po, o.supplier, o.marketplace, s(o.notes));
+      order.run(o.po, o.supplier, o.marketplace, s(o.notes), s(o.review), s(o.source), json(o.importNotes));
       clearInvoices.run(o.po);
       for (const inv of o.invoices || []) {
         invoice.run(inv.id, o.po, inv.kind, s(inv.date), s(inv.supplierRef), t(inv.statedTotalRmb), s(inv.filePath));
@@ -229,7 +246,13 @@ export function loadLedger(db) {
   const writeOffsByPo = groupBy(all('SELECT * FROM write_offs ORDER BY id'), 'po');
   const orders = all('SELECT * FROM orders ORDER BY po').map((o) =>
     strip({
-      ...o,
+      po: o.po,
+      supplier: o.supplier,
+      marketplace: o.marketplace,
+      notes: o.notes,
+      review: o.review,
+      source: o.source,
+      importNotes: o.import_notes ? JSON.parse(o.import_notes) : null,
       invoices: (invoicesByPo.get(o.po) || []).map((i) =>
         strip({
           id: i.id,
@@ -290,6 +313,55 @@ export function loadLedger(db) {
   );
 
   return { products, orders, payments, courierBills, shipments };
+}
+
+const DELETABLE = {
+  payment: 'DELETE FROM payments WHERE id = ?',
+  courier_bill: 'DELETE FROM courier_bills WHERE id = ?',
+  shipment: 'DELETE FROM shipments WHERE id = ?',
+  product: 'DELETE FROM products WHERE id = ?',
+};
+
+/** Removes one record (children cascade), logging what it was. */
+export function deleteRecord(db, entity, id, { actor }) {
+  const sql = DELETABLE[entity];
+  if (!sql) throw new Error(`Can't delete a ${entity}`);
+  const before = findRecord(loadLedger(db), entity, id);
+  if (!before) return false;
+  db.transaction(() => {
+    db.prepare(sql).run(id);
+    db.prepare('INSERT INTO audit_log (at, actor, action, entity, entity_id, data) VALUES (?, ?, ?, ?, ?, ?)').run(new Date().toISOString(), actor, 'delete', entity, id, json(before));
+  })();
+  return true;
+}
+
+function findRecord(ledger, entity, id) {
+  const list = { payment: ledger.payments, courier_bill: ledger.courierBills, shipment: ledger.shipments, product: ledger.products }[entity];
+  return list.find((r) => r.id === id) || null;
+}
+
+export function getSetting(db, key) {
+  return db.prepare('SELECT value FROM settings WHERE key = ?').get(key)?.value ?? null;
+}
+
+export function setSetting(db, key, value, { actor }) {
+  db.transaction(() => {
+    db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value === '' ? null : value);
+    db.prepare('INSERT INTO audit_log (at, actor, action, entity, entity_id, data) VALUES (?, ?, ?, ?, ?, ?)').run(new Date().toISOString(), actor, 'set', 'setting', key, json(value));
+  })();
+}
+
+/** The next PO number after the highest on file: PO-019 → PO-020. */
+export function nextPo(db) {
+  const numbers = db.prepare('SELECT po FROM orders').all().map((r) => Number(/^PO-(\d+)$/.exec(r.po)?.[1])).filter(Number.isFinite);
+  const n = numbers.length ? Math.max(...numbers) + 1 : 1;
+  return `PO-${String(n).padStart(3, '0')}`;
+}
+
+export function auditTrail(db, { entity, id, limit = 50 } = {}) {
+  const where = entity ? 'WHERE entity = ? AND entity_id = ?' : '';
+  const args = entity ? [entity, id] : [];
+  return db.prepare(`SELECT at, actor, action, entity, entity_id FROM audit_log ${where} ORDER BY id DESC LIMIT ?`).all(...args, limit);
 }
 
 function groupBy(rows, key) {

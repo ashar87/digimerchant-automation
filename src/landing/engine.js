@@ -405,14 +405,17 @@ function lineUnits(po, product, ordered, itemsByOrderProduct, writeOffs) {
 /* ---------------------------- courier bills ---------------------------- */
 
 function allocateBill(bill, allocations, shipmentsById, issue) {
-  const lines = bill.lines || [];
+  let lines = bill.lines || [];
+  // A bill for one shipment that states only USD carries all of it to that shipment.
+  const wholeBill = lines.length === 1 && lines[0].shipment && D(lines[0].rmb) === null;
+  if (wholeBill) lines = [{ ...lines[0], rmb: 1 }];
   if (lines.some((l) => D(l.rmb) === null)) {
     issue('error', 'bill_rmb_missing', bill.id, `Courier bill ${bill.id} has a line without an RMB amount.`);
     return [];
   }
   const totalRmb = sum(lines.map((l) => D(l.rmb)));
   const stated = D(bill.statedTotalRmb);
-  if (stated !== null && stated.minus(totalRmb).abs().gt(RMB_TOLERANCE)) {
+  if (!wholeBill && stated !== null && stated.minus(totalRmb).abs().gt(RMB_TOLERANCE)) {
     issue('warning', 'bill_total_mismatch', bill.id, `Courier bill ${bill.id} states ${fmtRmb(stated)} RMB but its lines add up to ${fmtRmb(totalRmb)} RMB.`);
   }
 
@@ -431,7 +434,7 @@ function allocateBill(bill, allocations, shipmentsById, issue) {
   const paidGbp = allocations.length && allocations.every((a) => a.gbp !== null) ? sum(allocations.map((a) => a.gbp)) : null;
 
   const rate = D(bill.rmbPerUsd);
-  if (rate !== null && paidUsd !== null) {
+  if (!wholeBill && rate !== null && paidUsd !== null) {
     const expected = totalRmb.div(rate);
     const diff = paidUsd.minus(expected);
     if (diff.abs().gt(USD_TOLERANCE)) {
@@ -452,7 +455,7 @@ function allocateBill(bill, allocations, shipmentsById, issue) {
     if (allocations.length && paid === null) {
       issue('error', 'bill_missing_currency', bill.id, `Courier bill ${bill.id} covers a ${s.marketplace} shipment but its payment has no ${currency} amount${currency === 'GBP' ? ' or QB rate' : ''}.`);
     }
-    out.push({ shipment: shipmentId, bill: bill.id, rmb, share, amount: paid !== null && share !== null ? paid.times(share) : null });
+    out.push({ shipment: shipmentId, bill: bill.id, rmb: wholeBill ? null : rmb, share, amount: paid !== null && share !== null ? paid.times(share) : null });
   }
   return out;
 }
