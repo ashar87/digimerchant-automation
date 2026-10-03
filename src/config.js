@@ -51,6 +51,8 @@ export const config = {
   minConfidence: num(process.env.MIN_CONFIDENCE, 0.55),
   dryRun: bool(process.env.DRY_RUN, false),
   catchUpMinutes: num(process.env.CATCH_UP_MINUTES, 0),
+  // If WhatsApp never becomes ready, exit so the service manager restarts us.
+  readyTimeoutSeconds: num(process.env.READY_TIMEOUT_SECONDS, 180),
   expirePendingDays: num(process.env.EXPIRE_PENDING_DAYS, 7),
 
   // The business's timezone, not the server's — see src/util/time.js.

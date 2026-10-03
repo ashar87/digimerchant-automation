@@ -128,7 +128,25 @@ async function reportGap(chatLabel, { missed, author }) {
 
 /* ---------- lifecycle ---------- */
 
+/**
+ * A failed startup used to leave the process alive but useless: Chromium up,
+ * WhatsApp never ready, no messages ever processed, and systemd none the wiser
+ * because nothing exited. Observed in the wild after a fast restart, where
+ * Chromium's previous context was torn down mid-initialisation.
+ *
+ * So: if we are not ready within the timeout, exit non-zero and let the service
+ * manager restart us. Dying loudly beats idling silently.
+ */
+let isReady = false;
+const readyTimer = setTimeout(() => {
+  if (isReady) return;
+  log.error(`WhatsApp did not become ready within ${config.readyTimeoutSeconds}s — exiting so the service restarts`);
+  process.exit(1);
+}, config.readyTimeoutSeconds * 1000);
+
 client.on('ready', async () => {
+  isReady = true;
+  clearTimeout(readyTimer);
   log.ok(`connected as ${client.info.pushname} (${client.info.wid.user})`);
   log.info(`watching ${chats.watch.length} chat(s):`);
   for (const c of chats.watch) log.info(`   • ${c.label}`);
@@ -165,7 +183,16 @@ async function shutdown(signal) {
 }
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('unhandledRejection', (err) => log.error('unhandled rejection:', err?.message || err));
+process.on('unhandledRejection', (err) => {
+  log.error('unhandled rejection:', err?.message || err);
+  // Before ready, a rejection means initialisation is broken — there is nothing
+  // to salvage, so exit and let the service manager retry. After ready, a
+  // transient error must not take down a working listener.
+  if (!isReady && !shuttingDown) {
+    log.error('that happened during startup — exiting so the service restarts');
+    process.exit(1);
+  }
+});
 
 log.info('starting WhatsApp client…');
 client.initialize();
