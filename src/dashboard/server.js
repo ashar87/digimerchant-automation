@@ -12,6 +12,7 @@ import { pathToFileURL } from 'node:url';
 import { config } from '../config.js';
 import { openLandingDb, loadLedger } from '../landing/store.js';
 import { createSpApi, spApiConfigured } from '../amazon/spapi.js';
+import { createSheetsWriter, sheetsConfigured } from '../google/sheets.js';
 import { computeLandingCosts } from '../landing/engine.js';
 import { layout, raw } from './html.js';
 import { inboxItems } from './views/inbox.js';
@@ -22,10 +23,10 @@ export const ACTORS = (process.env.DASHBOARD_USERS || 'Ashar,Atif').split(',').m
 
 export { HttpError } from './errors.js';
 
-export function createDashboard({ db, spapi = null }) {
+export function createDashboard({ db, spapi = null, sheets = null }) {
   return http.createServer(async (req, res) => {
     try {
-      await handle(db, spapi, req, res);
+      await handle({ db, spapi, sheets }, req, res);
     } catch (err) {
       const status = err.status || 500;
       if (status === 500) console.error('[dashboard]', err);
@@ -34,7 +35,7 @@ export function createDashboard({ db, spapi = null }) {
   });
 }
 
-async function handle(db, spapi, req, res) {
+async function handle({ db, spapi, sheets }, req, res) {
   const url = new URL(req.url, 'http://localhost');
   const cookies = parseCookies(req.headers.cookie);
   const actor = ACTORS.includes(cookies.actor) ? cookies.actor : null;
@@ -62,6 +63,7 @@ async function handle(db, spapi, req, res) {
   const ctx = {
     db,
     spapi,
+    sheets,
     actor,
     url,
     params,
@@ -158,7 +160,8 @@ if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   const port = Number(process.env.DASHBOARD_PORT || 3210);
   const db = openLandingDb(config.landingDbPath);
   const spapi = spApiConfigured(config.spapi) ? createSpApi(config.spapi) : null;
-  createDashboard({ db, spapi }).listen(port, '127.0.0.1', () => {
+  const sheets = sheetsConfigured(config.sellerboard) ? createSheetsWriter(config.sellerboard) : null;
+  createDashboard({ db, spapi, sheets }).listen(port, '127.0.0.1', () => {
     console.log(`Landing-cost dashboard: http://127.0.0.1:${port}  (database ${config.landingDbPath})`);
   });
 }

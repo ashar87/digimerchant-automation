@@ -71,6 +71,7 @@ ${items.map((i) => html`<tr><td>${select('item_product', productOptions(ledger, 
 <td><input name="item_shipped" inputmode="decimal" value="${i.shipped || ''}"></td><td><input name="item_received" inputmode="decimal" value="${i.received || ''}"></td></tr>`)}
 </tbody></table></div>
 <p class="muted small">Received counts only count once the shipment is Closed. Until then, costs use units shipped and ordered.</p>
+<p><label style="display:inline;color:inherit"><input type="checkbox" name="sellerboardManual" value="1"${s?.sellerboardManual ? ' checked' : ''}> Its cost was typed into Sellerboard by hand — keep it out of the feed</label></p>
 <button>${s ? 'Save shipment' : 'Add shipment'}</button></form>
 ${s ? html`<form method="post" action="/shipments/${enc(s.id)}/delete"><button class="danger">Delete shipment</button></form>${history(ctx, 'shipment', s.id)}` : ''}`;
   return { title: s ? s.id : 'New shipment', body };
@@ -110,6 +111,8 @@ export function saveShipment(ctx) {
     firstReceivedAt: date(f.get('firstReceivedAt'), 'Receiving date'),
   });
   if (!text(f, 'name')) delete shipment.name;
+  if (f.get('sellerboardManual')) shipment.sellerboardManual = true;
+  else delete shipment.sellerboardManual;
   if (!status) delete shipment.status;
   shipment.items = items;
   saveLedger(ctx.db, { shipments: [shipment] }, { actor: ctx.actor });

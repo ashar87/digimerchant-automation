@@ -49,7 +49,8 @@ every call runs on the cheap Flash model. That's the intended state for now.
 > dashboard (`npm run dashboard`) and the importer for the open orders
 > (`npm run landing:import`). Phase 3, the Amazon sync (`npm run amazon:sync`) and the WhatsApp
 > card queue, is built and waiting for SP-API keys; the listener doesn't send from the queue
-> yet. Invoice reading (below) is phase 5.
+> yet. Phase 4 (courier bills in the dashboard, the Sellerboard feed, nightly encrypted
+> backups) is built and waiting for a Google service account. Invoice reading (below) is phase 5.
 
 The real reason image support was built. This is the highest-value item on the list
 because it removes manual data entry from something you already do every time you pay a

@@ -1,0 +1,17 @@
+# /etc/systemd/system/digimerchant-sellerboard-feed.service — run by the timer below.
+[Unit]
+Description=Digi Merchant: write the Sellerboard cost feed to its Google Sheet
+
+[Service]
+Type=oneshot
+User=digimerchant
+WorkingDirectory=/opt/digimerchant
+ExecStart=/usr/bin/node scripts/sellerboard-feed.js --publish
+Environment=TZ=Europe/London
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=digimerchant-sellerboard-feed
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/digimerchant/data

@@ -506,17 +506,34 @@ Each one asks for the value at a hidden prompt and writes it into
 **Services.**
 
 ```bash
-sudo cp /opt/digimerchant/deploy/digimerchant-dashboard.service /opt/digimerchant/deploy/digimerchant-amazon-sync.* /etc/systemd/system/
+cd /opt/digimerchant/deploy
+sudo cp digimerchant-dashboard.service digimerchant-amazon-sync.* digimerchant-sellerboard-feed.* digimerchant-landing-backup.* /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now digimerchant-dashboard digimerchant-amazon-sync.timer
+sudo systemctl enable --now digimerchant-dashboard digimerchant-amazon-sync.timer digimerchant-sellerboard-feed.timer digimerchant-landing-backup.timer
+```
+
+Each morning: Amazon sync at 06:55, then the Sellerboard sheet at 07:20. Backups at 02:30.
+
+**Sellerboard.** Create a Google Cloud service account, download its JSON key, and put the
+key on the server (`scp key.json debian@YOUR_SERVER_IP:` then
+`sudo install -o digimerchant -m 600 key.json /opt/digimerchant/data/google-key.json`).
+Make a Google Sheet with a tab called `COGS`, share it with the service account's email as
+Editor, and set `GOOGLE_SERVICE_ACCOUNT_FILE=/opt/digimerchant/data/google-key.json` and
+`SELLERBOARD_SHEET_ID`. In Sellerboard: Settings → Automation → automatic COGS import, pointed
+at that sheet. Check the column names against Sellerboard's COGS template first; they're set
+in `src/sellerboard/feed.js`.
+
+**Backups.** Set `BACKUP_PASSPHRASE` with `set-secret.sh`, and keep the passphrase somewhere
+that isn't this server. Snapshots land in `data/backups/` (newest 30 kept). To get them off
+the server, pull them to your Mac:
+
+```bash
+rsync -az debian@YOUR_SERVER_IP:/opt/digimerchant/data/backups/ ~/DigiMerchantBackups/
 ```
 
 **Reaching the dashboard.** It listens on 127.0.0.1 only. With Tailscale on the server and
 on your and Atif's devices, `sudo tailscale serve --bg 3210` gives it an HTTPS address
 inside your tailnet and nowhere else. No firewall port is opened.
-
-**The landing-cost database** (`data/landing.db`) becomes the record of what every unit
-cost, so it's backed up off the server nightly (built with the Sellerboard feed).
 
 `push.sh` never copies `private/` (supplier pricing used for tests) to the server.
 

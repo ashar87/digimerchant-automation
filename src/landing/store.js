@@ -207,6 +207,7 @@ function migrate(db) {
   add('orders', 'review', "TEXT CHECK (review IN ('needs_review','reviewed') OR review IS NULL)"); // imported orders start as needs_review
   add('orders', 'source', 'TEXT'); // e.g. the sheet tab an imported order came from
   add('orders', 'import_notes', 'TEXT'); // JSON array shown when reviewing
+  add('shipments', 'sellerboard_manual', 'INTEGER'); // 1 = costs typed into Sellerboard by hand; the feed leaves it alone
 }
 
 const json = (v) => (v === undefined || v === null ? null : JSON.stringify(v));
@@ -257,11 +258,11 @@ export function saveLedger(db, ledger, { actor = 'import' } = {}) {
       log('courier_bill', b.id, b);
     }
 
-    const shipment = db.prepare(`INSERT INTO shipments (id, marketplace, name, status, created_at, first_received_at, synced_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET marketplace = excluded.marketplace, name = excluded.name, status = excluded.status, created_at = excluded.created_at, first_received_at = excluded.first_received_at, synced_at = excluded.synced_at`);
+    const shipment = db.prepare(`INSERT INTO shipments (id, marketplace, name, status, created_at, first_received_at, synced_at, sellerboard_manual) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET marketplace = excluded.marketplace, name = excluded.name, status = excluded.status, created_at = excluded.created_at, first_received_at = excluded.first_received_at, synced_at = excluded.synced_at, sellerboard_manual = excluded.sellerboard_manual`);
     const clearItems = db.prepare('DELETE FROM shipment_items WHERE shipment_id = ?');
     const item = db.prepare('INSERT INTO shipment_items (shipment_id, product, po, shipped, received) VALUES (?, ?, ?, ?, ?)');
     for (const sh of ledger.shipments || []) {
-      shipment.run(sh.id, sh.marketplace, s(sh.name), s(sh.status), s(sh.createdAt), s(sh.firstReceivedAt), s(sh.syncedAt));
+      shipment.run(sh.id, sh.marketplace, s(sh.name), s(sh.status), s(sh.createdAt), s(sh.firstReceivedAt), s(sh.syncedAt), sh.sellerboardManual ? 1 : null);
       clearItems.run(sh.id);
       for (const it of sh.items || []) item.run(sh.id, it.product, s(it.po), t(it.shipped), t(it.received));
       log('shipment', sh.id, sh);
@@ -355,6 +356,7 @@ export function loadLedger(db) {
       createdAt: sh.created_at,
       firstReceivedAt: sh.first_received_at,
       syncedAt: sh.synced_at,
+      sellerboardManual: sh.sellerboard_manual ? true : null,
       items: (itemsByShipment.get(sh.id) || []).map((i) => strip({ product: i.product, po: i.po, shipped: i.shipped, received: i.received })),
     })
   );

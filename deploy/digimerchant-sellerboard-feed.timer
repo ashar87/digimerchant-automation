@@ -1,0 +1,11 @@
+# /etc/systemd/system/digimerchant-sellerboard-feed.timer
+# After the morning Amazon sync, so the day's counts are in the feed.
+[Unit]
+Description=Daily Sellerboard cost feed
+
+[Timer]
+OnCalendar=*-*-* 07:20 Europe/London
+Persistent=true
+
+[Install]
+WantedBy=timers.target

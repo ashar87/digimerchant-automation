@@ -1,5 +1,7 @@
 import { html, select, money } from '../html.js';
 import { saveLedger, deleteRecord } from '../../landing/store.js';
+import { computeLandingCosts } from '../../landing/engine.js';
+import { queueBillCards } from '../../notify/bills.js';
 import { text, number, date, required, rows, compact, uniqueId } from '../forms.js';
 import { HttpError, notFound } from '../errors.js';
 import { enc } from './common.js';
@@ -109,7 +111,10 @@ export function savePayment(ctx) {
   });
   if (!payment.usd && !payment.gbp && !payment.eur) throw new HttpError(400, 'Enter the amount sent (USD, GBP or EUR)');
   payment.allocations = allocations;
+  const before = computeLandingCosts(ledger);
   saveLedger(ctx.db, { payments: [payment] }, { actor: ctx.actor });
+  const bills = allocations.filter((a) => a.type === 'bill').map((a) => a.target);
+  if (bills.length) queueBillCards(ctx.db, bills, before);
   const firstOrder = allocations.find((a) => a.type === 'order');
   return { redirect: `${firstOrder ? `/orders/${enc(firstOrder.target)}` : '/payments'}?ok=${enc(`Payment ${payment.id} saved.`)}` };
 }

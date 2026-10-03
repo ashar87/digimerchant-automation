@@ -67,6 +67,20 @@ export const config = {
     refreshTokens: { EU: process.env.SPAPI_REFRESH_TOKEN_EU, NA: process.env.SPAPI_REFRESH_TOKEN_NA },
   },
 
+  /* --- Sellerboard cost feed: a Google Sheet Sellerboard reads daily. Off until filled in. --- */
+  sellerboard: {
+    keyFile: process.env.GOOGLE_SERVICE_ACCOUNT_FILE,
+    sheetId: process.env.SELLERBOARD_SHEET_ID,
+    tab: process.env.SELLERBOARD_SHEET_TAB || 'COGS',
+  },
+
+  /* --- Nightly encrypted backup of the landing-cost database --- */
+  backup: {
+    passphrase: process.env.BACKUP_PASSPHRASE,
+    dir: process.env.BACKUP_DIR || path.join(ROOT, 'data', 'backups'),
+    keep: num(process.env.BACKUP_KEEP, 30),
+  },
+
   // Landing-cost records live apart from the listener's queue, so neither can corrupt the other.
   landingDbPath: process.env.LANDING_DB_PATH || path.join(ROOT, 'data', 'landing.db'),
   sessionPath: path.join(ROOT, 'data', 'wa-session'),

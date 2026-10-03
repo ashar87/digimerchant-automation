@@ -1,0 +1,10 @@
+# /etc/systemd/system/digimerchant-landing-backup.timer
+[Unit]
+Description=Nightly landing-cost backup
+
+[Timer]
+OnCalendar=*-*-* 02:30 Europe/London
+Persistent=true
+
+[Install]
+WantedBy=timers.target

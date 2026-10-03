@@ -69,6 +69,7 @@ const NAV = [
   ['/costs', 'Costs'],
   ['/payments', 'Payments'],
   ['/bills', 'Bills'],
+  ['/sellerboard', 'Sellerboard'],
   ['/products', 'Products'],
   ['/annie', 'Annie'],
   ['/settings', 'Settings'],

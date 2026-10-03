@@ -410,6 +410,8 @@ npm run dashboard                                  # http://127.0.0.1:3210
 npm run landing:import -- private/import/open-orders.json --dry-run
 npm run landing:check                              # engine vs the sourcing sheet
 npm run amazon:sync -- --dry-run                   # shipment status and counts from Amazon
+npm run sellerboard:feed                           # what Sellerboard gets, and what's held back
+npm run landing:backup                             # encrypted snapshot of data/landing.db
 npm test
 ```
 
@@ -424,6 +426,10 @@ npm test
 - `src/notify/` holds the queue of WhatsApp cards (shipment closed, link request, shortfall,
   cost change over 2%). The listener owns the WhatsApp session and will send from this queue;
   until that's wired in, the cards wait on the dashboard's Messages page.
+- `src/sellerboard/` builds the cost feed (one row per product per shipment, FIFO, GBP for the
+  UK and DE, USD for the US) and writes it to the Google Sheet Sellerboard reads, or to CSV.
+  Unchecked imports, deposit-only orders and shipments typed into Sellerboard by hand are held
+  back, each with its reason.
 - Real supplier figures live only in `private/` (gitignored): the import file and the test
   fixtures. Committed tests use made-up numbers.
 

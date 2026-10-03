@@ -22,7 +22,9 @@
     "landing:check": "node scripts/landing-check.js",
     "dashboard": "node src/dashboard/server.js",
     "landing:import": "node scripts/landing-import.js",
-    "amazon:sync": "node scripts/amazon-sync.js"
+    "amazon:sync": "node scripts/amazon-sync.js",
+    "sellerboard:feed": "node scripts/sellerboard-feed.js",
+    "landing:backup": "node scripts/landing-backup.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.0",

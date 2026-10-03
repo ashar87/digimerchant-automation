@@ -4,7 +4,8 @@ import { paymentsPage, paymentForm, savePayment, deletePayment } from './views/p
 import { shipmentsPage, shipmentForm, saveShipment, deleteShipment } from './views/shipments.js';
 import { costsPage, batchPage } from './views/costs.js';
 import { productsPage, productPage, saveProduct, deleteProduct } from './views/products.js';
-import { billsPage, billPage } from './views/bills.js';
+import { billsPage, billPage, saveBill, deleteBill } from './views/bills.js';
+import { sellerboardPage, sellerboardCsv, publishSellerboard } from './views/sellerboard.js';
 import { anniePage } from './views/annie.js';
 import { settingsPage, saveSettings } from './views/settings.js';
 import { runAmazonSync, replyToCard, messagesPage } from './views/amazon.js';
@@ -40,7 +41,15 @@ export const routes = [
   r('POST', '/shipments/:seg', saveShipment),
 
   r('GET', '/bills', billsPage),
+  r('GET', '/bills/new', billPage),
+  r('POST', '/bills', saveBill),
+  r('POST', '/bills/:seg/delete', deleteBill),
   r('GET', '/bills/:seg', billPage),
+  r('POST', '/bills/:seg', saveBill),
+
+  r('GET', '/sellerboard', sellerboardPage),
+  r('GET', '/sellerboard\\.csv', sellerboardCsv),
+  r('POST', '/sellerboard/publish', publishSellerboard),
 
   r('GET', '/costs', costsPage),
   r('GET', '/costs/:seg/:seg', batchPage),
