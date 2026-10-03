@@ -20,7 +20,14 @@ if (!fs.existsSync(file)) {
   process.exit(1);
 }
 
-const strip = (s) => s.replace(/\x1b\[[0-9;]*m/g, '');
+const strip = (s) =>
+  s
+    .replace(/\x1b\[[0-9;]*m/g, '')
+    // journalctl prefixes every line with "Mon DD HH:MM:SS host unit[pid]: ".
+    // Drop it so the app's own timestamp is at the start, where the parser
+    // expects it. Handles the default and -o short-iso formats.
+    .replace(/^\S+\s+\d+\s+\d{2}:\d{2}:\d{2}\s+\S+\s+[^\s\[]+\[\d+\]:\s?/, '')
+    .replace(/^\d{4}-\d{2}-\d{2}T\S+\s+\S+\s+[^\s\[]+\[\d+\]:\s?/, '');
 let lines = fs.readFileSync(file, 'utf8').split('\n').map(strip);
 
 const stamp = (l) => (l.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/) || [])[1] || null;
