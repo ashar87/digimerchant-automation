@@ -60,8 +60,9 @@ the ability to run a long-lived process. Any of these work with `deploy/push.sh`
 
 | Host | 2 GB plan | Region | Notes |
 |---|---|---|---|
-| **Hetzner** CX22 | ~€4.49 | DE, FI | Cheapest credible option. Set the location to **Germany or Finland** — US and Singapore cost more, and the ARM shapes aren't offered there. |
-| **Hetzner** CAX11 (ARM) | ~€5.99 | DE, FI | ARM; the scripts handle it. |
+| **OVHcloud** VPS | ~£5 | **UK**, FR | Reliable pick, UK datacentre. |
+| **Hetzner** CAX11 (ARM) | ~€5.99 | DE, FI | Cheap when orderable; ARM, which the scripts handle. Check availability. |
+| **Hetzner** CX23 (was CX22) | ~€5.99 | DE, FI | **Currently not orderable** — Hetzner's own page lists the Cost-Optimized line as unavailable. Do not plan around it. |
 | **OVHcloud** VPS | ~£5 | UK, FR | Has a **UK** datacentre if you'd rather keep data in the UK. |
 | **DigitalOcean** | ~$12 | London | Priciest of these, but the least friction — good docs, clean console. |
 | **Vultr** | ~$10 | London | Similar to DO, slightly cheaper. |
@@ -69,11 +70,13 @@ the ability to run a long-lived process. Any of these work with `deploy/push.sh`
 | **AWS Lightsail** | ~$10 | London | Worth it only if you already live in AWS. |
 | **Oracle Cloud Free Tier** | **£0** | UK, DE | 4 ARM cores / 24 GB genuinely free forever. See the caveat below. |
 
-> **Avoid Hetzner's CPX line.** CPX22 went from €7.99 to €19.49/mo in a June 2026
-> price change. The CX and CAX lines are unaffected and are what you want here — the
-> extra CPU in a CPX buys nothing for a workload that idles.
+> **Hetzner is awkward right now.** In June 2026 it renamed CX22 to CX23 and repriced the
+> CPX line; CPX22 is now ~€19.99/mo. As of October 2026 Hetzner's own page lists the
+> Cost-Optimized (CX) line as **"Currently not available"**, so the cheap plan often cannot
+> be ordered at all — if the console only offers you CPX, that is availability, not a
+> location filter.
 >
-> Cloud pricing moves. Treat every figure in this table as "check the console", not gospel.
+> Cloud pricing and availability move. Treat every figure here as "check the console".
 
 ### Oracle's free tier
 
