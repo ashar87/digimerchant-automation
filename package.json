@@ -17,13 +17,16 @@
     "dry": "DRY_RUN=true DEBUG=1 node src/index.js",
     "reset:queue": "node scripts/reset-queue.js",
     "diagnose:media": "node scripts/diagnose-media.js",
-    "report": "node scripts/report.js"
+    "report": "node scripts/report.js",
+    "test": "node --test 'test/**/*.test.js'",
+    "landing:check": "node scripts/landing-check.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.0",
     "@google/genai": "^2.18.0",
     "@notionhq/client": "^2.3.0",
     "better-sqlite3": "^11.10.0",
+    "decimal.js": "^10.6.0",
     "dotenv": "^17.2.3",
     "exceljs": "^4.4.0",
     "qrcode-terminal": "^0.12.0",

@@ -41,6 +41,13 @@ every call runs on the cheap Flash model. That's the intended state for now.
 
 ## 🎯 Next — receipts & supplier invoices → landing-cost workbook
 
+> **In progress as a landing-cost system** (the plan is in `private/landing-cost-plan.html`).
+> Phase 1 is built: `src/landing/` holds the data model (`store.js`, its own
+> `data/landing.db`) and the cost engine (`engine.js`). `npm test` runs the rule tests;
+> `npm run landing:check` reproduces the sourcing sheet from raw payments and bills, using
+> fixtures in `private/fixtures/landing/` that are never committed. Next comes phase 2, the dashboard
+> and import of the open orders. Invoice reading (below) is phase 5.
+
 The real reason image support was built. This is the highest-value item on the list
 because it removes manual data entry from something you already do every time you pay a
 supplier.

@@ -59,6 +59,8 @@ export const config = {
   timezone: process.env.TZ || 'Europe/London',
 
   dbPath: path.join(ROOT, 'data', 'automation.db'),
+  // Landing-cost records live apart from the listener's queue, so neither can corrupt the other.
+  landingDbPath: process.env.LANDING_DB_PATH || path.join(ROOT, 'data', 'landing.db'),
   sessionPath: path.join(ROOT, 'data', 'wa-session'),
   mediaCachePath: path.join(ROOT, 'data', 'media'),
 };

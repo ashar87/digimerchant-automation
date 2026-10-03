@@ -8,3 +8,6 @@ config/chats.json
 # Dry-run and runtime logs contain real chat content
 *.log
 dryrun.log
+
+# Plans and fixtures containing real supplier pricing — never committed
+private/
