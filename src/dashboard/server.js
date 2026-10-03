@@ -13,20 +13,24 @@ import { config } from '../config.js';
 import { openLandingDb, loadLedger } from '../landing/store.js';
 import { createSpApi, spApiConfigured } from '../amazon/spapi.js';
 import { createSheetsWriter, sheetsConfigured } from '../google/sheets.js';
+import { geminiInvoiceReader } from '../invoices/model.js';
+import { createWise, wiseConfigured } from '../wise/client.js';
+import { qboConfigured, qboFromConfig } from '../quickbooks/client.js';
 import { computeLandingCosts } from '../landing/engine.js';
 import { layout, raw } from './html.js';
 import { inboxItems } from './views/inbox.js';
 import { routes } from './routes.js';
 import { HttpError } from './errors.js';
+import { parseMultipart } from './multipart.js';
 
 export const ACTORS = (process.env.DASHBOARD_USERS || 'Ashar,Atif').split(',').map((s) => s.trim()).filter(Boolean);
 
 export { HttpError } from './errors.js';
 
-export function createDashboard({ db, spapi = null, sheets = null }) {
+export function createDashboard({ db, spapi = null, sheets = null, invoiceReader = null, wise = null, qbo = null }) {
   return http.createServer(async (req, res) => {
     try {
-      await handle({ db, spapi, sheets }, req, res);
+      await handle({ db, spapi, sheets, invoiceReader, wise, qbo }, req, res);
     } catch (err) {
       const status = err.status || 500;
       if (status === 500) console.error('[dashboard]', err);
@@ -35,7 +39,7 @@ export function createDashboard({ db, spapi = null, sheets = null }) {
   });
 }
 
-async function handle({ db, spapi, sheets }, req, res) {
+async function handle({ db, spapi, sheets, invoiceReader, wise, qbo }, req, res) {
   const url = new URL(req.url, 'http://localhost');
   const cookies = parseCookies(req.headers.cookie);
   const actor = ACTORS.includes(cookies.actor) ? cookies.actor : null;
@@ -64,10 +68,13 @@ async function handle({ db, spapi, sheets }, req, res) {
     db,
     spapi,
     sheets,
+    invoiceReader,
+    wise,
+    qbo,
     actor,
     url,
     params,
-    form: req.method === 'POST' ? await readForm(req) : null,
+    ...(req.method === 'POST' ? await readBody(req) : { form: null, files: [] }),
     // Costs are recomputed from the source records on every page; nothing is cached between requests.
     get data() {
       if (!cache) {
@@ -84,6 +91,7 @@ async function handle({ db, spapi, sheets }, req, res) {
   const out = await route.handler(ctx);
   if (out?.redirect) return redirect(res, out.redirect);
   if (out?.text !== undefined) return send(res, 200, out.text, out.type || 'text/plain; charset=utf-8', out.headers);
+  if (Buffer.isBuffer(out?.body)) return send(res, 200, out.body, out.type, out.headers);
   const inboxCount = inboxItems(ctx).filter((i) => i.count).length;
   send(res, 200, layout({ title: out.title, path: url.pathname, actor, inboxCount, flash: url.searchParams.get('ok'), body: out.body }));
 }
@@ -110,15 +118,26 @@ function sameOrigin(req) {
   }
 }
 
-async function readForm(req) {
+async function readBody(req) {
+  const type = req.headers['content-type'] || '';
+  const multipart = type.startsWith('multipart/form-data');
   const chunks = [];
   let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > 2_000_000) throw new HttpError(413, 'Form too large');
+    if (size > (multipart ? 20_000_000 : 2_000_000)) throw new HttpError(413, multipart ? 'The file is over 15 MB' : 'Form too large');
     chunks.push(chunk);
   }
-  return new URLSearchParams(Buffer.concat(chunks).toString('utf8'));
+  const body = Buffer.concat(chunks);
+  if (multipart) {
+    const { fields, files } = parseMultipart(body, type);
+    return { form: fields, files };
+  }
+  return { form: new URLSearchParams(body.toString('utf8')), files: [] };
+}
+
+async function readForm(req) {
+  return (await readBody(req)).form;
 }
 
 function parseCookies(header = '') {
@@ -161,7 +180,11 @@ if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   const db = openLandingDb(config.landingDbPath);
   const spapi = spApiConfigured(config.spapi) ? createSpApi(config.spapi) : null;
   const sheets = sheetsConfigured(config.sellerboard) ? createSheetsWriter(config.sellerboard) : null;
-  createDashboard({ db, spapi, sheets }).listen(port, '127.0.0.1', () => {
+  // PDFs and photos are read by Gemini only when a key is set; Excel never needs it.
+  const invoiceReader = config.geminiApiKey ? geminiInvoiceReader(await import('../providers/gemini.js')) : null;
+  const wise = wiseConfigured(config.wise) ? createWise(config.wise) : null;
+  const qbo = qboConfigured(config.qbo) ? qboFromConfig(db, config.qbo) : null;
+  createDashboard({ db, spapi, sheets, invoiceReader, wise, qbo }).listen(port, '127.0.0.1', () => {
     console.log(`Landing-cost dashboard: http://127.0.0.1:${port}  (database ${config.landingDbPath})`);
   });
 }

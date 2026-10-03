@@ -9,6 +9,8 @@ import { sellerboardPage, sellerboardCsv, publishSellerboard } from './views/sel
 import { anniePage } from './views/annie.js';
 import { settingsPage, saveSettings } from './views/settings.js';
 import { runAmazonSync, replyToCard, messagesPage } from './views/amazon.js';
+import { wisePage, fetchWise, ignoreTransfer, lookupRate } from './views/wise.js';
+import { invoicesPage, uploadInvoice, draftPage, saveDraft, discardDraft, draftFile } from './views/invoices.js';
 
 const SEG = '([^/]+)';
 const r = (method, path, handler) => ({ method, pattern: new RegExp(`^${path.replace(/:seg/g, SEG)}/?$`), handler });
@@ -26,10 +28,21 @@ export const routes = [
   r('POST', '/orders/:seg/invoices/:seg/delete', deleteInvoice),
   r('POST', '/orders/:seg/invoices/:seg', saveInvoice),
 
+  r('GET', '/invoices', invoicesPage),
+  r('POST', '/invoices/upload', uploadInvoice),
+  r('GET', '/invoices/drafts/:seg', draftPage),
+  r('GET', '/invoices/drafts/:seg/file', draftFile),
+  r('POST', '/invoices/drafts/:seg/save', saveDraft),
+  r('POST', '/invoices/drafts/:seg/discard', discardDraft),
+
   r('GET', '/payments', paymentsPage),
   r('GET', '/payments/new', paymentForm),
   r('POST', '/payments', savePayment),
   r('POST', '/payments/:seg/delete', deletePayment),
+  r('POST', '/payments/:seg/qb-rate', lookupRate),
+  r('GET', '/wise', wisePage),
+  r('POST', '/wise/fetch', fetchWise),
+  r('POST', '/wise/:seg/ignore', ignoreTransfer),
   r('GET', '/payments/:seg', paymentForm),
   r('POST', '/payments/:seg', savePayment),
 

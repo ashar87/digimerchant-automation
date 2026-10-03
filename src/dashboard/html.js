@@ -65,6 +65,7 @@ export function select(name, options, selected, { blank = false, attrs = '' } = 
 const NAV = [
   ['/', 'Inbox'],
   ['/orders', 'Orders'],
+  ['/invoices', 'Invoices'],
   ['/shipments', 'Shipments'],
   ['/costs', 'Costs'],
   ['/payments', 'Payments'],

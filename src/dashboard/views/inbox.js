@@ -3,6 +3,9 @@ import { getSetting } from '../../landing/store.js';
 import { refHref, enc } from './common.js';
 import { awaitingReply } from '../../notify/outbox.js';
 import { unmappedSkus, lastSync } from './amazon.js';
+import { pendingDrafts } from '../../invoices/intake.js';
+import { rateLookups } from '../../quickbooks/rates.js';
+import { unrecordedTransfers } from '../../wise/import.js';
 
 /**
  * Everything that needs a person, most urgent first. Things that only need
@@ -23,6 +26,15 @@ export function inboxItems(ctx) {
   for (const card of awaitingReply(ctx.db)) {
     items.push({ tone: 'warning', title: card.text.split('\n')[0].replace(/^\S+\s/, ''), detail: card.text.split('\n').slice(1, -1).join(' · '), href: card.payload?.shipment ? `/shipments/${enc(card.payload.shipment)}` : '/messages', card: card.id, count: true });
   }
+  for (const d of pendingDrafts(ctx.db)) {
+    const problems = (d.reading.checks || []).filter((c) => c.severity !== 'ok').length;
+    items.push({ tone: 'warning', title: `Invoice to check: ${d.filename || `invoice ${d.id}`}${d.po ? ` for ${d.po}` : ''}`, detail: `${d.source === 'whatsapp' ? 'Forwarded on WhatsApp' : `Uploaded by ${d.created_by}`} · ${problems ? `${problems} thing(s) to look at` : 'arithmetic adds up'}`, href: `/invoices/drafts/${d.id}`, count: true });
+  }
+  for (const l of rateLookups(ctx.db)) {
+    items.push({ tone: l.status === 'failed' ? 'error' : 'warning', title: `QB rate ${l.status === 'failed' ? 'lookup failed' : 'pending'} for payment ${l.payment_id} (${l.currency}, ${l.date}): ${l.message}`, href: `/payments/${enc(l.payment_id)}`, count: true });
+  }
+  const wise = unrecordedTransfers(ctx.db).length;
+  if (wise) items.push({ tone: 'warning', title: `${wise} Wise transfer${wise === 1 ? '' : 's'} to record as payments`, href: '/wise', count: true });
   for (const u of unmappedSkus(ctx.db)) {
     items.push({ tone: 'warning', title: `Amazon lists SKU ${u.sku}${u.fnsku ? ` (${u.fnsku})` : ''} on ${u.shipment_id}, but it isn’t in the product list. Add the SKU to the right product.`, href: '/products', count: true });
   }

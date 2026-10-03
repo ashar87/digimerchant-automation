@@ -151,12 +151,13 @@ function invoiceCard(order, inv, inUse, ledger) {
   <form class="inline" method="post" action="/orders/${enc(order.po)}/invoices/${enc(inv.id)}/delete" style="margin-left:12px"><button class="danger">Delete</button></form></div>`;
 }
 
-function invoiceForm(ctx, order, inv) {
+export function invoiceForm(ctx, order, inv, { action, submit, head = '' } = {}) {
   const { ledger } = ctx.data;
   const lines = [...(inv?.lines || [])];
   for (let i = 0; i < BLANK_LINES; i++) lines.push({});
-  const products = productOptions(ledger, order.marketplace);
-  return html`<form class="card" method="post" action="/orders/${enc(order.po)}/invoices${inv ? `/${enc(inv.id)}` : ''}">
+  const products = productOptions(ledger, order.marketplace || undefined);
+  return html`<form class="card" method="post" action="${action || `/orders/${enc(order.po)}/invoices${inv?.id ? `/${enc(inv.id)}` : ''}`}">
+${head}
 <div class="grid">
   <div><label>Type</label>${select('kind', [{ value: 'proforma', label: 'Proforma' }, { value: 'final', label: 'Final invoice' }], inv?.kind || (order.invoices?.length ? 'final' : 'proforma'))}</div>
   <div><label>Date</label><input type="date" name="date" value="${inv?.date || ''}"></div>
@@ -169,7 +170,7 @@ ${lines.map((l) => html`<tr><td>${select('line_kind', LINE_KINDS, l.kind || 'goo
 <td><input name="line_description" value="${l.description || l.category || ''}"></td></tr>`)}
 </tbody></table></div>
 <p class="muted small">Labour with a product is that product’s own cost; without one it’s shared by RMB share, as are fees and adjustments. Expenses (packing bags, samples, R&amp;D) stay out of landing cost — put the category in the description.</p>
-<button>${inv ? 'Save invoice' : 'Add invoice'}</button></form>`;
+<button>${submit || (inv ? 'Save invoice' : 'Add invoice')}</button></form>`;
 }
 
 export function editInvoicePage(ctx) {
@@ -182,10 +183,17 @@ export function editInvoicePage(ctx) {
 export function saveInvoice(ctx) {
   const order = structuredClone(findOrder(ctx, ctx.params[0]));
   const existingId = ctx.params[1];
-  const f = ctx.form;
+  const invoice = invoiceFromForm(ctx.form, order, ctx.data.ledger, existingId);
+  order.invoices = existingId ? order.invoices.map((i) => (i.id === existingId ? invoice : i)) : [...(order.invoices || []), invoice];
+  saveLedger(ctx.db, { orders: [order] }, { actor: ctx.actor });
+  return { redirect: `/orders/${enc(order.po)}?ok=${enc(`${invoice.kind === 'final' ? 'Final invoice' : 'Proforma'} saved.`)}` };
+}
+
+/** An invoice from the invoice form (used by order pages and the invoice-upload review). */
+export function invoiceFromForm(f, order, ledger, existingId = null, extra = {}) {
   const kind = text(f, 'kind') === 'final' ? 'final' : 'proforma';
   const invDate = date(f.get('date'), 'Invoice date');
-  const productIds = new Set(ctx.data.ledger.products.map((p) => p.id));
+  const productIds = new Set(ledger.products.map((p) => p.id));
 
   const lines = rows(f, 'line', ['kind', 'product', 'qty', 'rmb', 'description'], ['product', 'qty', 'rmb', 'description']).map((l, i) => {
     const where = `Line ${i + 1}`;
@@ -200,11 +208,10 @@ export function saveInvoice(ctx) {
 
   const taken = new Set((order.invoices || []).filter((i) => i.id !== existingId).map((i) => i.id));
   const id = existingId || uniqueId(`${order.po}-${kind}-${invDate || 'undated'}`, taken);
-  const invoice = compact({ id, kind, date: invDate, supplierRef: text(f, 'supplierRef'), statedTotalRmb: number(f.get('statedTotalRmb'), 'Invoice total'), lines });
+  const previous = existingId ? (order.invoices || []).find((i) => i.id === existingId) : null;
+  const invoice = compact({ id, kind, date: invDate, supplierRef: text(f, 'supplierRef'), statedTotalRmb: number(f.get('statedTotalRmb'), 'Invoice total'), filePath: previous?.filePath, ...extra });
   invoice.lines = lines;
-  order.invoices = existingId ? order.invoices.map((i) => (i.id === existingId ? invoice : i)) : [...(order.invoices || []), invoice];
-  saveLedger(ctx.db, { orders: [order] }, { actor: ctx.actor });
-  return { redirect: `/orders/${enc(order.po)}?ok=${enc(`${kind === 'final' ? 'Final invoice' : 'Proforma'} saved.`)}` };
+  return invoice;
 }
 
 export function deleteInvoice(ctx) {

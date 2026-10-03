@@ -24,7 +24,9 @@
     "landing:import": "node scripts/landing-import.js",
     "amazon:sync": "node scripts/amazon-sync.js",
     "sellerboard:feed": "node scripts/sellerboard-feed.js",
-    "landing:backup": "node scripts/landing-backup.js"
+    "landing:backup": "node scripts/landing-backup.js",
+    "wise:import": "node scripts/wise-import.js",
+    "qb:rates": "node scripts/qb-rates.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.0",

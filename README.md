@@ -412,6 +412,8 @@ npm run landing:check                              # engine vs the sourcing shee
 npm run amazon:sync -- --dry-run                   # shipment status and counts from Amazon
 npm run sellerboard:feed                           # what Sellerboard gets, and what's held back
 npm run landing:backup                             # encrypted snapshot of data/landing.db
+npm run wise:import                                # recent Wise transfers, to record as payments
+npm run qb:rates                                   # QuickBooks exchange rates for payments that need one
 npm test
 ```
 
@@ -430,6 +432,13 @@ npm test
   UK and DE, USD for the US) and writes it to the Google Sheet Sellerboard reads, or to CSV.
   Unchecked imports, deposit-only orders and shipments typed into Sellerboard by hand are held
   back, each with its reason.
+- `src/invoices/` reads supplier invoices: Excel exactly, PDFs and photos with Gemini (blanks
+  stay blank, never guessed), then checks the arithmetic in code. Uploads and invoices
+  forwarded to the WhatsApp self-chat (`handleForwardedInvoice`, not wired into the listener
+  yet) become drafts that a person checks before they join an order.
+- `src/wise/` and `src/quickbooks/` suggest payments from Wise transfers and fill in the QB
+  exchange rate for the payment date. A rate is only used for its exact day; otherwise the
+  payment shows "rate pending". Both stay off until their keys are set.
 - Real supplier figures live only in `private/` (gitignored): the import file and the test
   fixtures. Committed tests use made-up numbers.
 

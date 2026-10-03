@@ -6,6 +6,8 @@ import { text, number, date, required, rows, compact, uniqueId } from '../forms.
 import { HttpError, notFound } from '../errors.js';
 import { enc } from './common.js';
 import { history } from './orders.js';
+import { paymentFromTransfer } from '../../wise/import.js';
+import { paymentsNeedingRate } from '../../quickbooks/rates.js';
 
 const TYPES = [
   { value: 'order', label: 'Order (PO)' },
@@ -27,7 +29,7 @@ export function paymentsPage(ctx) {
   const body = html`
 <h1>Payments</h1>
 <p class="sub">Every Wise transfer, its rate, and what it paid for. The PO goes in the Wise reference.</p>
-<p><a class="button" href="/payments/new">Record a payment</a></p>
+<p><a class="button" href="/payments/new">Record a payment</a> <a href="/wise" style="margin-left:10px">From Wise</a></p>
 <div class="card scroll"><table>
 <thead><tr><th>Date</th><th>Payment</th><th>Reference</th><th class="n">USD</th><th class="n">GBP / EUR</th><th class="n">QB rate</th><th>Paid for</th></tr></thead>
 <tbody>${[...ledger.payments].reverse().map((p) => html`<tr><td>${p.date}</td><td><a href="/payments/${enc(p.id)}">${p.id}</a></td><td>${p.reference || ''}</td>
@@ -40,10 +42,14 @@ export function paymentsPage(ctx) {
 export function paymentForm(ctx) {
   const { ledger } = ctx.data;
   const id = ctx.params[0];
-  const p = id ? ledger.payments.find((x) => x.id === id) : null;
+  let p = id ? ledger.payments.find((x) => x.id === id) : null;
   if (id && !p) throw notFound(`Payment ${id}`);
   const preset = ctx.url.searchParams.get('po');
-  const allocations = [...(p?.allocations || (preset ? [{ type: 'order', target: preset }] : []))];
+  const wiseId = ctx.url.searchParams.get('wise');
+  const wise = !p && wiseId ? ctx.db.prepare('SELECT * FROM wise_transfers WHERE id = ?').get(wiseId) : null;
+  const fromWise = wise ? paymentFromTransfer(wise) : null;
+  if (fromWise) p = { ...fromWise, id: null };
+  const allocations = [...(p?.allocations || (fromWise?.allocation ? [fromWise.allocation] : preset ? [{ type: 'order', target: preset }] : []))];
   for (let i = 0; i < BLANK_ROWS; i++) allocations.push({});
   const targets = [
     ...ledger.orders.map((o) => o.po),
@@ -52,8 +58,11 @@ export function paymentForm(ctx) {
 
   const body = html`
 <p class="muted small"><a href="/payments">Payments</a></p>
-<h1>${p ? `Payment ${p.id}` : 'Record a payment'}</h1>
-<form class="card" method="post" action="/payments${p ? `/${enc(p.id)}` : ''}">
+<h1>${p?.id ? `Payment ${p.id}` : 'Record a payment'}</h1>
+${fromWise ? html`<p class="notice">Filled in from the Wise transfer of ${fromWise.date}${fromWise.reference ? ` (“${fromWise.reference}”)` : ''}. Check the amounts against Wise and say what it paid for.</p>` : ''}
+${p?.id ? rateStatus(ctx, p) : ''}
+<form class="card" method="post" action="/payments${p?.id ? `/${enc(p.id)}` : ''}">
+${fromWise ? html`<input type="hidden" name="wise" value="${fromWise.wise}">` : ''}
 <div class="grid">
   <div><label>Date (required)</label><input type="date" name="date" value="${p?.date || ''}" required></div>
   <div><label>Wise reference</label><input name="reference" value="${p?.reference || ''}" placeholder="PO-020 30%"></div>
@@ -75,10 +84,10 @@ ${allocations.map((a) => html`<tr><td>${select('alloc_type', TYPES, a.type || 'o
 <datalist id="targets">${targets.map((t) => html`<option value="${t}">`)}</datalist>
 <p class="muted small">When one transfer pays several invoices, give each its USD so the transfer can be split. Never link on amount alone.</p>
 <label><input type="text" name="notes" value="${p?.notes || ''}" placeholder="Notes" style="width:100%"></label>
-<p><button>${p ? 'Save payment' : 'Record payment'}</button></p>
+<p><button>${p?.id ? 'Save payment' : 'Record payment'}</button></p>
 </form>
-${p ? html`<form method="post" action="/payments/${enc(p.id)}/delete"><button class="danger">Delete payment</button></form>${history(ctx, 'payment', p.id)}` : ''}`;
-  return { title: p ? p.id : 'New payment', body };
+${p?.id ? html`<form method="post" action="/payments/${enc(p.id)}/delete"><button class="danger">Delete payment</button></form>${history(ctx, 'payment', p.id)}` : ''}`;
+  return { title: p?.id || 'New payment', body };
 }
 
 export function savePayment(ctx) {
@@ -113,6 +122,8 @@ export function savePayment(ctx) {
   payment.allocations = allocations;
   const before = computeLandingCosts(ledger);
   saveLedger(ctx.db, { payments: [payment] }, { actor: ctx.actor });
+  const wise = text(f, 'wise');
+  if (wise) ctx.db.prepare('UPDATE wise_transfers SET payment_id = ? WHERE id = ?').run(payment.id, wise);
   const bills = allocations.filter((a) => a.type === 'bill').map((a) => a.target);
   if (bills.length) queueBillCards(ctx.db, bills, before);
   const firstOrder = allocations.find((a) => a.type === 'order');
@@ -124,3 +135,11 @@ export function deletePayment(ctx) {
   return { redirect: '/payments?ok=Payment+deleted.' };
 }
 
+
+function rateStatus(ctx, p) {
+  const needs = paymentsNeedingRate(ctx.data.ledger).some((x) => x.id === p.id);
+  const lookup = ctx.db.prepare('SELECT * FROM qb_rate_lookups WHERE payment_id = ?').get(p.id);
+  if (!needs && !(lookup && lookup.status !== 'found')) return '';
+  return html`<div class="notice">This payment needs a QB rate to be costed in GBP.${lookup?.message ? html` ${lookup.message}.` : ''}
+${ctx.qbo ? html`<form class="inline" method="post" action="/payments/${enc(p.id)}/qb-rate"><button class="ghost" style="margin-left:8px">Get it from QuickBooks</button></form>` : html` Enter it below (QuickBooks isn’t connected).`}</div>`;
+}

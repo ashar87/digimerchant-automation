@@ -50,7 +50,10 @@ every call runs on the cheap Flash model. That's the intended state for now.
 > (`npm run landing:import`). Phase 3, the Amazon sync (`npm run amazon:sync`) and the WhatsApp
 > card queue, is built and waiting for SP-API keys; the listener doesn't send from the queue
 > yet. Phase 4 (courier bills in the dashboard, the Sellerboard feed, nightly encrypted
-> backups) is built and waiting for a Google service account. Invoice reading (below) is phase 5.
+> backups) is built and waiting for a Google service account. Phase 5 (invoice reading below,
+> Wise import, QB rate lookup) is built: Excel works now, PDFs and photos use the Gemini key
+> already set, and Wise/QuickBooks wait for their keys. Still to do: wire the outbox and the
+> invoice hook into the WhatsApp listener, and deploy the dashboard behind Tailscale.
 
 The real reason image support was built. This is the highest-value item on the list
 because it removes manual data entry from something you already do every time you pay a

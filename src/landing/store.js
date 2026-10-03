@@ -171,6 +171,48 @@ CREATE TABLE IF NOT EXISTS sync_runs (
   summary TEXT
 );
 
+-- Invoices uploaded or forwarded, read but not yet checked by a person.
+CREATE TABLE IF NOT EXISTS invoice_drafts (
+  id         INTEGER PRIMARY KEY,
+  created_at TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  source     TEXT NOT NULL,             -- upload | whatsapp
+  file_path  TEXT NOT NULL,             -- under data/invoices
+  filename   TEXT,
+  mime       TEXT,
+  po         TEXT,                      -- from the WhatsApp caption or the upload form
+  reading    TEXT,                      -- JSON: what was read, how, and the checks
+  status     TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','saved','discarded')),
+  saved_as   TEXT                       -- invoice id once saved
+);
+
+-- Transfers read from Wise, waiting to be recorded as payments.
+CREATE TABLE IF NOT EXISTS wise_transfers (
+  id              TEXT PRIMARY KEY,
+  created         TEXT NOT NULL,
+  reference       TEXT,
+  status          TEXT,
+  source_currency TEXT,
+  source_value    TEXT,
+  target_currency TEXT,
+  target_value    TEXT,
+  rate            TEXT,
+  payment_id      TEXT,                 -- set once recorded as a payment
+  ignored         INTEGER,
+  raw             TEXT
+);
+
+-- QuickBooks exchange-rate lookups: a rate is only used for the exact day it's for.
+CREATE TABLE IF NOT EXISTS qb_rate_lookups (
+  payment_id TEXT PRIMARY KEY,
+  currency   TEXT NOT NULL,
+  date       TEXT NOT NULL,
+  status     TEXT NOT NULL,             -- found | pending | failed
+  rate       TEXT,
+  message    TEXT,
+  checked_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT

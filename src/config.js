@@ -74,6 +74,18 @@ export const config = {
     tab: process.env.SELLERBOARD_SHEET_TAB || 'COGS',
   },
 
+  /* --- Wise: read transfers to suggest payments. Off until a token is set. --- */
+  wise: { token: process.env.WISE_API_TOKEN, profileId: process.env.WISE_PROFILE_ID || null },
+
+  /* --- QuickBooks Online: exchange rates for the payment date. Off until filled in. --- */
+  qbo: {
+    clientId: process.env.QBO_CLIENT_ID,
+    clientSecret: process.env.QBO_CLIENT_SECRET,
+    realmId: process.env.QBO_REALM_ID,
+    refreshToken: process.env.QBO_REFRESH_TOKEN,
+    environment: process.env.QBO_ENVIRONMENT || 'production',
+  },
+
   /* --- Nightly encrypted backup of the landing-cost database --- */
   backup: {
     passphrase: process.env.BACKUP_PASSPHRASE,

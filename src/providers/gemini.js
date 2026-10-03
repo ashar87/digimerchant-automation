@@ -53,6 +53,24 @@ export async function extract({ system, text, attachments = [] }) {
 }
 
 /**
+ * Reads a document into JSON matching `schema`. Used for supplier invoices,
+ * always on the vision model and at temperature 0.
+ */
+export async function readJson({ system, text, attachments = [], schema }) {
+  const res = await withRetry(() => api().models.generateContent({
+    model: config.geminiVisionModel,
+    // Resolution is set once for the request: the API rejects the per-part enum form.
+    contents: [{ role: 'user', parts: [{ text }, ...attachments.map((a) => ({ inlineData: { mimeType: a.mime, data: a.data } }))] }],
+    config: { systemInstruction: system, responseMimeType: 'application/json', responseSchema: schema, temperature: 0, mediaResolution: 'MEDIA_RESOLUTION_HIGH' },
+  }), { label: `gemini/${config.geminiVisionModel}` });
+  try {
+    return { data: JSON.parse(res.text), model: config.geminiVisionModel };
+  } catch {
+    throw new Error(`Gemini returned unparseable JSON: ${String(res.text).slice(0, 200)}`);
+  }
+}
+
+/**
  * Transcribes a voice note. Handles Urdu, Roman Urdu, English, and — importantly
  * for this business — sentences that switch between them mid-flow.
  */
