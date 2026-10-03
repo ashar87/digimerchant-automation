@@ -16,7 +16,11 @@ TARGET="${1:-}"
 [ -n "$TARGET" ] || { echo "usage: ./deploy/push.sh user@host [--code]"; exit 1; }
 CODE_ONLY="${2:-}"
 
-command -v rsync >/dev/null || { echo "rsync not found"; exit 1; }
+command -v rsync >/dev/null || { echo "rsync not found locally"; exit 1; }
+
+# -t only when we have a terminal, so sudo can prompt interactively without
+# ssh complaining when this runs non-interactively.
+SSH_T=$([ -t 0 ] && echo "-t" || echo "-T")
 [ -f .env ] || { echo "No .env here — run this from the project directory."; exit 1; }
 [ -f config/chats.json ] || { echo "No config/chats.json — run 'npm run chats' first."; exit 1; }
 
@@ -24,8 +28,14 @@ command -v rsync >/dev/null || { echo "rsync not found"; exit 1; }
 SUDO='$(if [ "$(id -u)" -eq 0 ]; then echo ""; else echo "sudo"; fi)'
 
 echo "==> Preparing /opt/digimerchant on $TARGET"
+# Debian's minimal cloud images ship without rsync, so make sure it is there
+# before we try to use it as a transport.
+ssh $SSH_T "$TARGET" "SUDO=\$(if [ \$(id -u) -eq 0 ]; then echo ''; else echo sudo; fi); \
+  command -v rsync >/dev/null || { echo '==> Installing rsync on the server'; \
+    \$SUDO apt-get update -qq && \$SUDO DEBIAN_FRONTEND=noninteractive apt-get install -y -qq rsync >/dev/null; }"
+
 # Owned by the login user during the copy, handed to the service user by setup.sh.
-ssh -t "$TARGET" "SUDO=\$(if [ \$(id -u) -eq 0 ]; then echo ''; else echo sudo; fi); \
+ssh $SSH_T "$TARGET" "SUDO=\$(if [ \$(id -u) -eq 0 ]; then echo ''; else echo sudo; fi); \
   \$SUDO mkdir -p /opt/digimerchant && \$SUDO chown -R \$(id -un):\$(id -gn) /opt/digimerchant"
 
 echo "==> Copying code, .env and config/chats.json"
@@ -36,13 +46,13 @@ rsync -az --delete \
 
 if [ "$CODE_ONLY" = "--code" ]; then
   echo "==> Reinstalling dependencies and restarting"
-  ssh -t "$TARGET" "SUDO=\$(if [ \$(id -u) -eq 0 ]; then echo ''; else echo sudo; fi); \
+  ssh $SSH_T "$TARGET" "SUDO=\$(if [ \$(id -u) -eq 0 ]; then echo ''; else echo sudo; fi); \
     cd /opt/digimerchant && PUPPETEER_SKIP_DOWNLOAD=1 npm ci --omit=dev --no-audit --no-fund >/dev/null && \
     \$SUDO chown -R digimerchant:digimerchant /opt/digimerchant && \
     \$SUDO systemctl restart digimerchant && \
     \$SUDO systemctl --no-pager status digimerchant | head -5"
 else
   echo "==> Running setup (sudo on the server)"
-  ssh -t "$TARGET" "SUDO=\$(if [ \$(id -u) -eq 0 ]; then echo ''; else echo sudo; fi); \
+  ssh $SSH_T "$TARGET" "SUDO=\$(if [ \$(id -u) -eq 0 ]; then echo ''; else echo sudo; fi); \
     \$SUDO bash /opt/digimerchant/deploy/setup.sh"
 fi

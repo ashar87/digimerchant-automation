@@ -33,7 +33,10 @@ fi
 say "Installing system packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq curl ca-certificates >/dev/null
+# build-essential and python3 are for better-sqlite3: there is no prebuilt binary
+# for every Node release, so it compiles from source and node-gyp needs make, a
+# C++ compiler and python3.
+apt-get install -y -qq curl ca-certificates git rsync build-essential python3 >/dev/null
 
 # --- Chromium: Debian and Ubuntu are NOT interchangeable here ---------------
 #
