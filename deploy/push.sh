@@ -25,7 +25,7 @@ SUDO='$(if [ "$(id -u)" -eq 0 ]; then echo ""; else echo "sudo"; fi)'
 
 echo "==> Preparing /opt/digimerchant on $TARGET"
 # Owned by the login user during the copy, handed to the service user by setup.sh.
-ssh "$TARGET" "SUDO=\$(if [ \$(id -u) -eq 0 ]; then echo ''; else echo sudo; fi); \
+ssh -t "$TARGET" "SUDO=\$(if [ \$(id -u) -eq 0 ]; then echo ''; else echo sudo; fi); \
   \$SUDO mkdir -p /opt/digimerchant && \$SUDO chown -R \$(id -un):\$(id -gn) /opt/digimerchant"
 
 echo "==> Copying code, .env and config/chats.json"
@@ -36,7 +36,7 @@ rsync -az --delete \
 
 if [ "$CODE_ONLY" = "--code" ]; then
   echo "==> Reinstalling dependencies and restarting"
-  ssh "$TARGET" "SUDO=\$(if [ \$(id -u) -eq 0 ]; then echo ''; else echo sudo; fi); \
+  ssh -t "$TARGET" "SUDO=\$(if [ \$(id -u) -eq 0 ]; then echo ''; else echo sudo; fi); \
     cd /opt/digimerchant && PUPPETEER_SKIP_DOWNLOAD=1 npm ci --omit=dev --no-audit --no-fund >/dev/null && \
     \$SUDO chown -R digimerchant:digimerchant /opt/digimerchant && \
     \$SUDO systemctl restart digimerchant && \
