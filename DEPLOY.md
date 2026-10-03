@@ -486,6 +486,40 @@ Either way the code, the systemd unit and the logging are identical.
 
 ---
 
+## Landing costs (not installed yet)
+
+The dashboard and the daily Amazon sync run on the same server, as two more systemd
+units. Nothing here is installed by `setup.sh` yet; these are the steps for when it is.
+
+**Secrets.** Never paste a key or token into a chat. From your Mac, in the project directory:
+
+```bash
+./deploy/set-secret.sh debian@YOUR_SERVER_IP SPAPI_LWA_CLIENT_ID
+./deploy/set-secret.sh debian@YOUR_SERVER_IP SPAPI_LWA_CLIENT_SECRET
+./deploy/set-secret.sh debian@YOUR_SERVER_IP SPAPI_REFRESH_TOKEN_EU
+./deploy/set-secret.sh debian@YOUR_SERVER_IP SPAPI_REFRESH_TOKEN_NA
+```
+
+Each one asks for the value at a hidden prompt and writes it into
+`/opt/digimerchant/.env` (chmod 600), replacing any old value.
+
+**Services.**
+
+```bash
+sudo cp /opt/digimerchant/deploy/digimerchant-dashboard.service /opt/digimerchant/deploy/digimerchant-amazon-sync.* /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now digimerchant-dashboard digimerchant-amazon-sync.timer
+```
+
+**Reaching the dashboard.** It listens on 127.0.0.1 only. With Tailscale on the server and
+on your and Atif's devices, `sudo tailscale serve --bg 3210` gives it an HTTPS address
+inside your tailnet and nowhere else. No firewall port is opened.
+
+**The landing-cost database** (`data/landing.db`) becomes the record of what every unit
+cost, so it's backed up off the server nightly (built with the Sellerboard feed).
+
+`push.sh` never copies `private/` (supplier pricing used for tests) to the server.
+
 ## What this server holds
 
 Worth being clear-eyed, because it's more sensitive than most side projects:

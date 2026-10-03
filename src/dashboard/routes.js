@@ -7,6 +7,7 @@ import { productsPage, productPage, saveProduct, deleteProduct } from './views/p
 import { billsPage, billPage } from './views/bills.js';
 import { anniePage } from './views/annie.js';
 import { settingsPage, saveSettings } from './views/settings.js';
+import { runAmazonSync, replyToCard, messagesPage } from './views/amazon.js';
 
 const SEG = '([^/]+)';
 const r = (method, path, handler) => ({ method, pattern: new RegExp(`^${path.replace(/:seg/g, SEG)}/?$`), handler });
@@ -49,6 +50,10 @@ export const routes = [
   r('POST', '/products/:seg/delete', deleteProduct),
   r('GET', '/products/:seg', productPage),
   r('POST', '/products/:seg', saveProduct),
+
+  r('POST', '/amazon/sync', runAmazonSync),
+  r('POST', '/cards/:seg/reply', replyToCard),
+  r('GET', '/messages', messagesPage),
 
   r('GET', '/annie', anniePage),
   r('GET', '/settings', settingsPage),

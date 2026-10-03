@@ -41,7 +41,7 @@ ssh $SSH_T "$TARGET" "SUDO=\$(if [ \$(id -u) -eq 0 ]; then echo ''; else echo su
 echo "==> Copying code, .env and config/chats.json"
 rsync -az --delete \
   --exclude node_modules --exclude data --exclude '.git' \
-  --exclude '*.log' --exclude '.wwebjs_*' \
+  --exclude '*.log' --exclude '.wwebjs_*' --exclude private --exclude .claude \
   ./ "$TARGET:/opt/digimerchant/"
 
 if [ "$CODE_ONLY" = "--code" ]; then

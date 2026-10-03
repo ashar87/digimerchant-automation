@@ -1,0 +1,12 @@
+# /etc/systemd/system/digimerchant-amazon-sync.timer
+# Each morning, so the cards are waiting when you wake up.
+[Unit]
+Description=Daily Amazon shipment sync
+
+[Timer]
+OnCalendar=*-*-* 06:55 Europe/London
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

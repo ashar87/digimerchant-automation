@@ -409,6 +409,7 @@ and never touches the WhatsApp listener's.
 npm run dashboard                                  # http://127.0.0.1:3210
 npm run landing:import -- private/import/open-orders.json --dry-run
 npm run landing:check                              # engine vs the sourcing sheet
+npm run amazon:sync -- --dry-run                   # shipment status and counts from Amazon
 npm test
 ```
 
@@ -417,6 +418,12 @@ npm test
 - `src/dashboard/` is the private website: Inbox, orders, payments, shipments, courier bills,
   costs, products and Annie's account. It listens on 127.0.0.1 only; other devices will reach
   it through Tailscale, never a public address.
+- `src/amazon/` syncs FBA shipments each morning: status, units shipped and received, and the
+  order link (a PO number in the shipment name, or a Y on a WhatsApp card). It stays off until
+  the `SPAPI_*` keys are in `.env`.
+- `src/notify/` holds the queue of WhatsApp cards (shipment closed, link request, shortfall,
+  cost change over 2%). The listener owns the WhatsApp session and will send from this queue;
+  until that's wired in, the cards wait on the dashboard's Messages page.
 - Real supplier figures live only in `private/` (gitignored): the import file and the test
   fixtures. Committed tests use made-up numbers.
 

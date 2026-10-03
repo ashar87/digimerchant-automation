@@ -59,6 +59,14 @@ export const config = {
   timezone: process.env.TZ || 'Europe/London',
 
   dbPath: path.join(ROOT, 'data', 'automation.db'),
+  /* --- Amazon Selling Partner API (landing-cost sync). Disabled until filled in. --- */
+  spapi: {
+    clientId: process.env.SPAPI_LWA_CLIENT_ID,
+    clientSecret: process.env.SPAPI_LWA_CLIENT_SECRET,
+    // One authorisation per region: EU covers UK and DE, NA covers the US.
+    refreshTokens: { EU: process.env.SPAPI_REFRESH_TOKEN_EU, NA: process.env.SPAPI_REFRESH_TOKEN_NA },
+  },
+
   // Landing-cost records live apart from the listener's queue, so neither can corrupt the other.
   landingDbPath: process.env.LANDING_DB_PATH || path.join(ROOT, 'data', 'landing.db'),
   sessionPath: path.join(ROOT, 'data', 'wa-session'),

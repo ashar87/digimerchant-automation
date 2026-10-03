@@ -21,7 +21,8 @@
     "test": "node --test 'test/**/*.test.js'",
     "landing:check": "node scripts/landing-check.js",
     "dashboard": "node src/dashboard/server.js",
-    "landing:import": "node scripts/landing-import.js"
+    "landing:import": "node scripts/landing-import.js",
+    "amazon:sync": "node scripts/amazon-sync.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.0",

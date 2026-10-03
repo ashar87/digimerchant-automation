@@ -124,6 +124,53 @@ CREATE TABLE IF NOT EXISTS shipment_items (
   received    TEXT
 );
 
+-- Messages for the WhatsApp self-chat. The listener owns the WhatsApp session,
+-- so everything else queues here and the listener sends.
+CREATE TABLE IF NOT EXISTS outbox (
+  id            INTEGER PRIMARY KEY,
+  kind          TEXT NOT NULL,            -- shipment_closed, link_request, shortfall, cost_change, ...
+  dedupe_key    TEXT UNIQUE,              -- the same event never queues twice
+  text          TEXT NOT NULL,
+  payload       TEXT,                     -- JSON: what a Y reply does
+  needs_reply   INTEGER NOT NULL DEFAULT 0,
+  created_at    TEXT NOT NULL,
+  sent_at       TEXT,
+  wa_message_id TEXT,
+  reply         TEXT,
+  replied_by    TEXT,
+  replied_at    TEXT
+);
+
+-- Lines Amazon reports whose SKU isn't in the product list yet.
+CREATE TABLE IF NOT EXISTS amazon_unmapped (
+  shipment_id TEXT NOT NULL,
+  marketplace TEXT NOT NULL,
+  sku         TEXT NOT NULL,
+  fnsku       TEXT,
+  shipped     TEXT,
+  received    TEXT,
+  seen_at     TEXT NOT NULL,
+  PRIMARY KEY (shipment_id, sku)
+);
+
+-- The last landing cost each batch was reported at, so changes can be told apart from noise.
+CREATE TABLE IF NOT EXISTS batch_snapshots (
+  shipment TEXT NOT NULL,
+  product  TEXT NOT NULL,
+  landing  TEXT,
+  status   TEXT,
+  at       TEXT NOT NULL,
+  PRIMARY KEY (shipment, product)
+);
+
+CREATE TABLE IF NOT EXISTS sync_runs (
+  id      INTEGER PRIMARY KEY,
+  kind    TEXT NOT NULL,                  -- amazon, sellerboard, ...
+  at      TEXT NOT NULL,
+  ok      INTEGER NOT NULL,
+  summary TEXT
+);
+
 CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT

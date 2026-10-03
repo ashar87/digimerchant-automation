@@ -1,0 +1,27 @@
+# /etc/systemd/system/digimerchant-dashboard.service
+# The landing-cost dashboard. Listens on 127.0.0.1 only; `tailscale serve` makes it
+# reachable from your and Atif's devices without a public address (see DEPLOY.md).
+[Unit]
+Description=Digi Merchant landing-cost dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=digimerchant
+WorkingDirectory=/opt/digimerchant
+ExecStart=/usr/bin/node src/dashboard/server.js
+Environment=TZ=Europe/London
+Environment=NODE_ENV=production
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=digimerchant-dashboard
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/digimerchant/data
+
+[Install]
+WantedBy=multi-user.target

@@ -1,6 +1,8 @@
 import { html } from '../html.js';
 import { getSetting } from '../../landing/store.js';
 import { refHref, enc } from './common.js';
+import { awaitingReply } from '../../notify/outbox.js';
+import { unmappedSkus, lastSync } from './amazon.js';
 
 /**
  * Everything that needs a person, most urgent first. Things that only need
@@ -15,6 +17,14 @@ export function inboxItems(ctx) {
   }
   for (const i of result.issues.filter((x) => x.severity === 'warning')) {
     items.push({ tone: 'warning', title: i.message, href: refHref(ledger, i.ref), count: true });
+  }
+  const sync = lastSync(ctx.db);
+  if (sync && !sync.ok) items.push({ tone: 'error', title: `The last Amazon check failed: ${(sync.summary.errors || []).join('; ')}`, href: '/shipments', count: true });
+  for (const card of awaitingReply(ctx.db)) {
+    items.push({ tone: 'warning', title: card.text.split('\n')[0].replace(/^\S+\s/, ''), detail: card.text.split('\n').slice(1, -1).join(' · '), href: card.payload?.shipment ? `/shipments/${enc(card.payload.shipment)}` : '/messages', card: card.id, count: true });
+  }
+  for (const u of unmappedSkus(ctx.db)) {
+    items.push({ tone: 'warning', title: `Amazon lists SKU ${u.sku}${u.fnsku ? ` (${u.fnsku})` : ''} on ${u.shipment_id}, but it isn’t in the product list. Add the SKU to the right product.`, href: '/products', count: true });
   }
   for (const o of ledger.orders.filter((x) => x.review === 'needs_review')) {
     items.push({
@@ -46,7 +56,8 @@ ${items.length
   ? html`<div class="card"><ul class="items">${items.map(
       (i) => html`<li><span class="sev ${i.tone}">${i.tone === 'error' ? '✗' : i.tone === 'warning' ? '!' : 'i'}</span>
       <div style="flex:1">${i.href ? html`<a href="${i.href}">${i.title}</a>` : i.title}${i.detail ? html`<div class="muted small">${i.detail}</div>` : ''}</div>
-      ${i.review ? html`<form class="inline" method="post" action="/orders/${enc(i.review)}/review"><input type="hidden" name="back" value="/"><button class="ghost">Mark checked</button></form>` : ''}</li>`
+      ${i.review ? html`<form class="inline" method="post" action="/orders/${enc(i.review)}/review"><input type="hidden" name="back" value="/"><button class="ghost">Mark checked</button></form>` : ''}
+      ${i.card ? html`<form class="inline" method="post" action="/cards/${i.card}/reply"><button name="reply" value="Y">Link</button> <button class="ghost" name="reply" value="N">Not this</button></form>` : ''}</li>`
     )}</ul></div>`
   : ''}
 ${waiting.length

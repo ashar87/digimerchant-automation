@@ -1,0 +1,17 @@
+# /etc/systemd/system/digimerchant-amazon-sync.service — run by the timer below.
+[Unit]
+Description=Digi Merchant: shipment status and counts from Amazon
+
+[Service]
+Type=oneshot
+User=digimerchant
+WorkingDirectory=/opt/digimerchant
+ExecStart=/usr/bin/node scripts/amazon-sync.js
+Environment=TZ=Europe/London
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=digimerchant-amazon-sync
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/digimerchant/data

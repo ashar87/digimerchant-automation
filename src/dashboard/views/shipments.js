@@ -4,6 +4,7 @@ import { text, number, date, required, rows, compact } from '../forms.js';
 import { HttpError, notFound } from '../errors.js';
 import { MARKETPLACES, productOptions, poOptions, productName, enc } from './common.js';
 import { history } from './orders.js';
+import { amazonPanel } from './amazon.js';
 
 const BLANK_ITEMS = 3;
 
@@ -12,7 +13,8 @@ export function shipmentsPage(ctx) {
   const results = new Map(result.shipments.map((s) => [s.id, s]));
   const body = html`
 <h1>Shipments</h1>
-<p class="sub">Status and counts come from Amazon once the sync is connected; until then they’re entered here.</p>
+<p class="sub">Status and counts come from Amazon each morning once it’s connected; until then they’re entered here.</p>
+${amazonPanel(ctx)}
 <p><a class="button" href="/shipments/new">Add a shipment</a></p>
 <div class="card scroll"><table>
 <thead><tr><th>Shipment</th><th>Mkt</th><th>Contents</th><th>Amazon</th><th class="n">Received</th><th>Order</th><th class="n">Delivery / unit</th></tr></thead>
