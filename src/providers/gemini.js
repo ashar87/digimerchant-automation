@@ -19,7 +19,8 @@ function toPart(a) {
   const part = { inlineData: { mimeType: a.mime, data: a.data } };
   // Fine print in a Seller Central or Sellerboard screenshot is exactly what the
   // resolution knob is for.
-  if (VISUAL.has(a.kind)) part.mediaResolution = `MEDIA_RESOLUTION_${config.imageResolution}`;
+  // The per-part setting is an object ({ level }); a bare enum string is rejected with a 400.
+  if (VISUAL.has(a.kind)) part.mediaResolution = { level: `MEDIA_RESOLUTION_${config.imageResolution}` };
   return part;
 }
 
@@ -59,9 +60,8 @@ export async function extract({ system, text, attachments = [] }) {
 export async function readJson({ system, text, attachments = [], schema }) {
   const res = await withRetry(() => api().models.generateContent({
     model: config.geminiVisionModel,
-    // Resolution is set once for the request: the API rejects the per-part enum form.
-    contents: [{ role: 'user', parts: [{ text }, ...attachments.map((a) => ({ inlineData: { mimeType: a.mime, data: a.data } }))] }],
-    config: { systemInstruction: system, responseMimeType: 'application/json', responseSchema: schema, temperature: 0, mediaResolution: 'MEDIA_RESOLUTION_HIGH' },
+    contents: [{ role: 'user', parts: [{ text }, ...attachments.map(toPart)] }],
+    config: { systemInstruction: system, responseMimeType: 'application/json', responseSchema: schema, temperature: 0 },
   }), { label: `gemini/${config.geminiVisionModel}` });
   try {
     return { data: JSON.parse(res.text), model: config.geminiVisionModel };
