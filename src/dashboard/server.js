@@ -34,7 +34,10 @@ export function createDashboard({ db, spapi = null, sheets = null, invoiceReader
     } catch (err) {
       const status = err.status || 500;
       if (status === 500) console.error('[dashboard]', err);
-      send(res, status, layout({ title: 'Problem', body: raw(`<h1>${status === 404 ? 'Not found' : 'Something went wrong'}</h1><p>${escapeText(err.message)}</p><p><a href="/">Back to the inbox</a></p>`) }));
+      const heading = { 400: 'Check the form', 403: 'Refused', 404: 'Not found', 409: 'Someone else saved first' }[status] || 'Something went wrong';
+      const back = err.back && err.back.startsWith('/') && !err.back.startsWith('//') ? err.back : '/';
+      const who = parseCookies(req.headers.cookie).actor;
+      send(res, status, layout({ title: heading, path: '', actor: ACTORS.includes(who) ? who : null, body: raw(`<h1>${heading}</h1><p>${escapeText(err.message)}</p><p><a href="${escapeText(back)}">${back === '/' ? 'Back to the inbox' : 'Open it again'}</a></p>`) }));
     }
   });
 }

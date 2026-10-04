@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { openLandingDb, saveLedger, loadLedger } from '../../src/landing/store.js';
 import { createDashboard } from '../../src/dashboard/server.js';
 import { unsent } from '../../src/notify/outbox.js';
+import { versionOf } from '../../src/dashboard/versions.js';
 
 let db, server, base;
 const written = [];
@@ -67,6 +68,6 @@ test('the Sellerboard page lists the rows, offers the CSV, and writes the sheet'
 });
 
 test('ticking “typed into Sellerboard by hand” takes a shipment out of the feed', async () => {
-  await post('/shipments/FBANEW1', { marketplace: 'UK', status: 'CLOSED', createdAt: '2026-01-10', firstReceivedAt: '2026-01-12', sellerboardManual: '1', item_product: 'A-UK', item_po: 'PO-1', item_shipped: '100', item_received: '100' });
+  await post('/shipments/FBANEW1', { version: versionOf(loadLedger(db).shipments.find((s) => s.id === 'FBANEW1')), marketplace: 'UK', status: 'CLOSED', createdAt: '2026-01-10', firstReceivedAt: '2026-01-12', sellerboardManual: '1', item_product: 'A-UK', item_po: 'PO-1', item_shipped: '100', item_received: '100' });
   assert.match(await page('/sellerboard'), /0 rows for Sellerboard/);
 });

@@ -8,6 +8,7 @@ import { text, required, compact } from '../forms.js';
 import { HttpError, notFound } from '../errors.js';
 import { MARKETPLACES, enc } from './common.js';
 import { invoiceForm, invoiceFromForm } from './orders.js';
+import { versionField, assertFresh } from '../versions.js';
 
 const METHOD = { excel: 'Read exactly from the Excel file.', model: 'Read by Gemini. Anything it couldn’t read is left blank, never guessed.', none: 'Not read automatically.', failed: 'Reading failed.' };
 
@@ -77,7 +78,7 @@ export function draftPage(ctx) {
 ${r.marketplaceAsPrinted ? html`<p class="small">Marketplace printed on the invoice: <b>${r.marketplaceAsPrinted}</b> (suppliers sometimes print the wrong one).</p>` : ''}
 ${r.notes ? html`<p class="notice">${r.notes}</p>` : ''}
 <div class="card"><ul class="items">${(r.checks || []).map((c) => html`<li><span class="sev ${c.severity === 'ok' ? 'info' : 'warning'}">${c.severity === 'ok' ? '✓' : '!'}</span><div style="flex:1">${c.message}</div></li>`)}</ul></div>
-${invoiceForm(ctx, order, inv, { action: `/invoices/drafts/${draft.id}/save`, submit: 'Save to this PO', head })}
+${invoiceForm(ctx, order, inv, { action: `/invoices/drafts/${draft.id}/save`, submit: 'Save to this PO', head, version: html`${versionField(existing)}<input type="hidden" name="version_po" value="${order.po}">` })}
 <form method="post" action="/invoices/drafts/${draft.id}/discard"><button class="danger">Discard</button></form>
 ${r.sourceText ? html`<details><summary>What the Excel file says</summary><pre class="small" style="white-space:pre-wrap">${r.sourceText}</pre></details>` : ''}`;
   return { title: 'Check invoice', body };
@@ -90,7 +91,10 @@ export function saveDraft(ctx) {
   const po = required(text(f, 'po'), 'PO number').toUpperCase();
   if (!/^PO-\d+$/.test(po)) throw new HttpError(400, 'PO numbers look like PO-020');
   const { ledger } = ctx.data;
-  let order = structuredClone(ledger.orders.find((o) => o.po === po) || null);
+  const current = ledger.orders.find((o) => o.po === po) || null;
+  // Only the PO the page was opened on can be stale; choosing another one here is a fresh choice.
+  if (po === f.get('version_po')) assertFresh(ctx, 'order', po, current, `/invoices/drafts/${draft.id}`);
+  let order = structuredClone(current);
   if (!order) {
     const marketplace = text(f, 'marketplace');
     if (!MARKETPLACES.includes(marketplace)) throw new HttpError(400, 'Choose UK, DE or US for the new PO');

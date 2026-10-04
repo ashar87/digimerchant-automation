@@ -3,6 +3,7 @@ import { saveLedger, nextPo, auditTrail } from '../../landing/store.js';
 import { text, number, date, required, rows, compact, uniqueId } from '../forms.js';
 import { HttpError } from '../errors.js';
 import { MARKETPLACES, productOptions, findOrder, productName, enc } from './common.js';
+import { versionField, assertFresh } from '../versions.js';
 
 const LINE_KINDS = [
   { value: 'goods', label: 'Goods' },
@@ -71,7 +72,7 @@ export function orderPage(ctx) {
 <h1>${order.po} · ${order.supplier} · ${order.marketplace}</h1>
 <p>${badge(PAID_STATUS[r.paidStatus])}
 ${order.review === 'needs_review'
-  ? html` ${badge(['Imported, to check', 'warn'])} <form class="inline" method="post" action="/orders/${enc(order.po)}/review"><button class="ghost">Mark checked</button></form>`
+  ? html` ${badge(['Imported, to check', 'warn'])} <form class="inline" method="post" action="/orders/${enc(order.po)}/review">${versionField(order)}<button class="ghost">Mark checked</button></form>`
   : ''}</p>
 ${order.notes ? html`<p class="sub">${order.notes}</p>` : ''}
 ${order.importNotes?.length
@@ -121,7 +122,7 @@ ${invoiceForm(ctx, order, null)}</details>
 <h2>Write-offs</h2>
 <p class="muted small">Units that will never ship. Their cost moves to the units that did arrive.</p>
 ${(order.writeOffs || []).length ? html`<ul>${order.writeOffs.map((w) => html`<li>${productName(ledger, w.product)}: ${units(w.qty)} ${w.reason ? `(${w.reason})` : ''}</li>`)}</ul>` : ''}
-<form class="card" method="post" action="/orders/${enc(order.po)}/write-offs"><div class="grid">
+<form class="card" method="post" action="/orders/${enc(order.po)}/write-offs">${versionField(order)}<div class="grid">
 <div><label>Product</label>${select('product', r.lines.map((l) => ({ value: l.product, label: productName(ledger, l.product) })), null)}</div>
 <div><label>Units</label><input name="qty" inputmode="decimal" required></div>
 <div><label>Reason</label><input name="reason"></div></div><button class="ghost">Write off</button></form>
@@ -148,16 +149,17 @@ function invoiceCard(order, inv, inUse, ledger) {
   ${inv.statedTotalRmb ? html`<tr class="total"><td colspan="3">Invoice total</td><td class="n">${rmb(inv.statedTotalRmb)}</td><td></td></tr>` : ''}
   </tbody></table></div>
   <a href="/orders/${enc(order.po)}/invoices/${enc(inv.id)}">Edit</a>
-  <form class="inline" method="post" action="/orders/${enc(order.po)}/invoices/${enc(inv.id)}/delete" style="margin-left:12px"><button class="danger">Delete</button></form></div>`;
+  <form class="inline" method="post" action="/orders/${enc(order.po)}/invoices/${enc(inv.id)}/delete" style="margin-left:12px">${versionField(order)}<button class="danger">Delete</button></form></div>`;
 }
 
-export function invoiceForm(ctx, order, inv, { action, submit, head = '' } = {}) {
+export function invoiceForm(ctx, order, inv, { action, submit, head = '', version } = {}) {
   const { ledger } = ctx.data;
   const lines = [...(inv?.lines || [])];
   for (let i = 0; i < BLANK_LINES; i++) lines.push({});
   const products = productOptions(ledger, order.marketplace || undefined);
   return html`<form class="card" method="post" action="${action || `/orders/${enc(order.po)}/invoices${inv?.id ? `/${enc(inv.id)}` : ''}`}">
 ${head}
+${version === undefined ? versionField(ctx.data.ledger.orders.find((o) => o.po === order.po) || null) : version}
 <div class="grid">
   <div><label>Type</label>${select('kind', [{ value: 'proforma', label: 'Proforma' }, { value: 'final', label: 'Final invoice' }], inv?.kind || (order.invoices?.length ? 'final' : 'proforma'))}</div>
   <div><label>Date</label><input type="date" name="date" value="${inv?.date || ''}"></div>
@@ -181,7 +183,9 @@ export function editInvoicePage(ctx) {
 }
 
 export function saveInvoice(ctx) {
-  const order = structuredClone(findOrder(ctx, ctx.params[0]));
+  const current = findOrder(ctx, ctx.params[0]);
+  assertFresh(ctx, 'order', current.po, current, `/orders/${enc(current.po)}`);
+  const order = structuredClone(current);
   const existingId = ctx.params[1];
   const invoice = invoiceFromForm(ctx.form, order, ctx.data.ledger, existingId);
   order.invoices = existingId ? order.invoices.map((i) => (i.id === existingId ? invoice : i)) : [...(order.invoices || []), invoice];
@@ -215,14 +219,18 @@ export function invoiceFromForm(f, order, ledger, existingId = null, extra = {})
 }
 
 export function deleteInvoice(ctx) {
-  const order = structuredClone(findOrder(ctx, ctx.params[0]));
+  const current = findOrder(ctx, ctx.params[0]);
+  assertFresh(ctx, 'order', current.po, current, `/orders/${enc(current.po)}`);
+  const order = structuredClone(current);
   order.invoices = (order.invoices || []).filter((i) => i.id !== ctx.params[1]);
   saveLedger(ctx.db, { orders: [order] }, { actor: ctx.actor });
   return { redirect: `/orders/${enc(order.po)}?ok=Invoice+deleted.` };
 }
 
 export function markReviewed(ctx) {
-  const order = structuredClone(findOrder(ctx, ctx.params[0]));
+  const current = findOrder(ctx, ctx.params[0]);
+  assertFresh(ctx, 'order', current.po, current, `/orders/${enc(current.po)}`);
+  const order = structuredClone(current);
   order.review = 'reviewed';
   saveLedger(ctx.db, { orders: [order] }, { actor: ctx.actor });
   const back = ctx.form.get('back');
@@ -230,7 +238,9 @@ export function markReviewed(ctx) {
 }
 
 export function addWriteOff(ctx) {
-  const order = structuredClone(findOrder(ctx, ctx.params[0]));
+  const current = findOrder(ctx, ctx.params[0]);
+  assertFresh(ctx, 'order', current.po, current, `/orders/${enc(current.po)}`);
+  const order = structuredClone(current);
   const f = ctx.form;
   const product = required(text(f, 'product'), 'Product');
   const qty = required(number(f.get('qty'), 'Units'), 'Units');

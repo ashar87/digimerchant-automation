@@ -3,6 +3,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { openLandingDb, saveLedger, loadLedger, auditTrail } from '../../src/landing/store.js';
 import { createDashboard } from '../../src/dashboard/server.js';
+import { versionOf } from '../../src/dashboard/versions.js';
 
 let db, server, base;
 
@@ -25,6 +26,7 @@ before(async () => {
 
 after(() => server.close());
 
+const orderVersion = (po) => versionOf(loadLedger(db).orders.find((o) => o.po === po));
 const get = (path, actor = 'Ashar') => fetch(base + path, { headers: actor ? { Cookie: `actor=${actor}` } : {}, redirect: 'manual' });
 const post = (path, fields, { actor = 'Ashar', origin = base } = {}) => {
   const body = new URLSearchParams();
@@ -56,7 +58,7 @@ test('every page renders', async () => {
 
 test('the inbox lists imported orders until someone checks them', async () => {
   assert.match(await (await get('/')).text(), /Imported order to check: PO-001/);
-  const r = await post('/orders/PO-001/review', { back: '/' }, { actor: 'Atif' });
+  const r = await post('/orders/PO-001/review', { back: '/', version: orderVersion('PO-001') }, { actor: 'Atif' });
   assert.equal(r.status, 303);
   assert.doesNotMatch(await (await get('/')).text(), /Imported order to check: PO-001/);
   assert.equal(auditTrail(db, { entity: 'order', id: 'PO-001' })[0].actor, 'Atif');
@@ -68,6 +70,7 @@ test('a new order, its invoice and its payment produce a cost, all audited', asy
 
   assert.equal((await post('/orders', { po: 'PO-002', supplier: 'New Supplier', marketplace: 'UK' })).status, 303);
   const inv = await post('/orders/PO-002/invoices', {
+    version: orderVersion('PO-002'),
     kind: 'proforma', date: '2026-03-01', statedTotalRmb: '2,000',
     line_kind: ['goods', 'fee', 'goods'], line_product: ['A-UK', '', ''], line_qty: ['200', '', ''], line_rmb: ['1,980', '20', ''], line_description: ['', 'Agent 1%', ''],
   });
@@ -119,4 +122,30 @@ test('cutover date is a setting, unset until chosen', async () => {
   assert.match(await (await get('/')).text(), /No cutover date yet/);
   await post('/settings', { cutover_date: '2026-11-01' });
   assert.doesNotMatch(await (await get('/')).text(), /No cutover date yet/);
+});
+
+test('a save made on a page opened before someone else’s save is refused, and says who', async () => {
+  const stale = orderVersion('PO-002');
+  // Atif adds a write-off first...
+  assert.equal((await post('/orders/PO-002/write-offs', { version: stale, product: 'A-UK', qty: '1', reason: 'damaged' }, { actor: 'Atif' })).status, 303);
+  // ...then Ashar, still on the old page, tries to add one too.
+  const r = await post('/orders/PO-002/write-offs', { version: stale, product: 'A-UK', qty: '2', reason: 'lost' });
+  assert.equal(r.status, 409);
+  const page = await r.text();
+  assert.match(page, /Someone else saved first/);
+  assert.match(page, /Atif changed PO-002 at \d\d:\d\d on \d{1,2} [A-Z][a-z]{2}/);
+  assert.match(page, /class="who" href="\/who">Ashar</);
+  assert.match(page, /href="\/orders\/PO-002"/);
+  assert.deepEqual(loadLedger(db).orders.find((o) => o.po === 'PO-002').writeOffs.map((w) => w.qty), ['1']);
+});
+
+test('a stale delete is refused too, and a form with no version is refused', async () => {
+  const payment = () => loadLedger(db).payments.find((p) => p.id === 'P-1');
+  const stale = versionOf(payment());
+  const fields = { date: '2026-01-15', gbp: '210', alloc_type: 'order', alloc_target: 'PO-001', alloc_part: 'full', alloc_usd: '', alloc_rmb: '', alloc_description: '' };
+  assert.equal((await post('/payments/P-1', { ...fields, version: stale }, { actor: 'Atif' })).status, 303);
+  assert.equal((await post('/payments/P-1/delete', { version: stale })).status, 409);
+  assert.ok(payment());
+  assert.equal((await post('/payments/P-1', fields)).status, 400);
+  assert.equal(payment().gbp, '210');
 });

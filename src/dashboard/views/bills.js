@@ -6,6 +6,7 @@ import { text, number, date, required, rows, compact, uniqueId } from '../forms.
 import { HttpError, notFound } from '../errors.js';
 import { enc } from './common.js';
 import { history } from './orders.js';
+import { versionField, assertFresh } from '../versions.js';
 
 const KINDS = [
   { value: 'shipping', label: 'Shipping' },
@@ -54,6 +55,7 @@ ${allocations.map((a) => html`<tr><td><a href="/shipments/${enc(a.shipment.id)}"
   : ''}
 <h2>${bill ? 'Edit' : 'Lines'}</h2>
 <form class="card" method="post" action="/bills${bill ? `/${enc(bill.id)}` : ''}">
+${bill ? versionField(bill) : ''}
 <div class="grid">
   <div><label>Agent</label><input name="agent" value="${bill?.agent || 'Annie'}"></div>
   <div><label>Date</label><input type="date" name="date" value="${bill?.date || ''}" required></div>
@@ -67,14 +69,16 @@ ${lines.map((l) => html`<tr><td>${select('line_kind', KINDS, l.kind || 'shipping
 <datalist id="shipments">${ledger.shipments.map((s) => html`<option value="${s.id}">`)}</datalist>
 <p class="muted small">Put domestic shipping on its own shipment’s line. Fees and adjustments with no shipment are shared by RMB share. The bill’s total and rate are checked against its lines.</p>
 <button>${bill ? 'Save bill' : 'Add bill'}</button></form>
-${bill ? html`<form method="post" action="/bills/${enc(bill.id)}/delete"><button class="danger">Delete bill</button></form>${history(ctx, 'courier_bill', bill.id)}` : ''}`;
+${bill ? html`<form method="post" action="/bills/${enc(bill.id)}/delete">${versionField(bill)}<button class="danger">Delete bill</button></form>${history(ctx, 'courier_bill', bill.id)}` : ''}`;
   return { title: bill ? bill.id : 'New courier bill', body };
 }
 
 export function saveBill(ctx) {
   const { ledger } = ctx.data;
   const existingId = ctx.params[0];
-  if (existingId && !ledger.courierBills.some((b) => b.id === existingId)) throw notFound(`Courier bill ${existingId}`);
+  const existing = existingId ? ledger.courierBills.find((b) => b.id === existingId) : null;
+  if (existingId && !existing) throw notFound(`Courier bill ${existingId}`);
+  if (existing) assertFresh(ctx, 'courier_bill', existingId, existing, `/bills/${enc(existingId)}`);
   const f = ctx.form;
   const d = date(f.get('date'), 'Date', { required: true });
   const agent = text(f, 'agent');
@@ -102,6 +106,8 @@ export function saveBill(ctx) {
 }
 
 export function deleteBill(ctx) {
+  const existing = ctx.data.ledger.courierBills.find((b) => b.id === ctx.params[0]);
+  if (existing) assertFresh(ctx, 'courier_bill', existing.id, existing, `/bills/${enc(existing.id)}`);
   if (!deleteRecord(ctx.db, 'courier_bill', ctx.params[0], { actor: ctx.actor })) throw notFound(`Courier bill ${ctx.params[0]}`);
   return { redirect: '/bills?ok=Bill+deleted.' };
 }

@@ -3,6 +3,7 @@ import { saveLedger, deleteRecord } from '../../landing/store.js';
 import { text, required, compact, list } from '../forms.js';
 import { HttpError, notFound } from '../errors.js';
 import { MARKETPLACES, enc } from './common.js';
+import { versionField, assertFresh } from '../versions.js';
 
 export function productsPage(ctx) {
   const { ledger } = ctx.data;
@@ -20,7 +21,7 @@ ${productForm(null)}`;
 }
 
 function productForm(p) {
-  return html`<form class="card" method="post" action="/products${p ? `/${enc(p.id)}` : ''}"><div class="grid">
+  return html`<form class="card" method="post" action="/products${p ? `/${enc(p.id)}` : ''}">${p ? versionField(p) : ''}<div class="grid">
 <div><label>Code (required)</label><input name="code" value="${p?.code || ''}" required placeholder="EGLS10"></div>
 <div><label>Marketplace</label>${select('marketplace', MARKETPLACES, p?.marketplace || 'UK', { attrs: p ? 'disabled' : '' })}</div>
 <div><label>Name</label><input name="name" value="${p?.name || ''}"></div>
@@ -38,7 +39,7 @@ export function productPage(ctx) {
   return {
     title: p.id,
     body: html`<p class="muted small"><a href="/products">Products</a></p><h1>${p.id}</h1>${productForm(p)}
-<form method="post" action="/products/${enc(p.id)}/delete"><button class="danger">Delete product</button></form>`,
+<form method="post" action="/products/${enc(p.id)}/delete">${versionField(p)}<button class="danger">Delete product</button></form>`,
   };
 }
 
@@ -47,6 +48,7 @@ export function saveProduct(ctx) {
   const f = ctx.form;
   const existing = ctx.params[0] ? ledger.products.find((x) => x.id === ctx.params[0]) : null;
   if (ctx.params[0] && !existing) throw notFound(`Product ${ctx.params[0]}`);
+  if (existing) assertFresh(ctx, 'product', existing.id, existing, `/products/${enc(existing.id)}`);
   const code = required(text(f, 'code'), 'Code').toUpperCase();
   const marketplace = existing?.marketplace || text(f, 'marketplace');
   if (!MARKETPLACES.includes(marketplace)) throw new HttpError(400, 'Choose UK, DE or US');
@@ -62,6 +64,8 @@ export function saveProduct(ctx) {
 export function deleteProduct(ctx) {
   const { ledger } = ctx.data;
   const id = ctx.params[0];
+  const existing = ledger.products.find((p) => p.id === id);
+  if (existing) assertFresh(ctx, 'product', id, existing, `/products/${enc(id)}`);
   const used = ledger.orders.some((o) => o.invoices.some((i) => i.lines.some((l) => l.product === id))) || ledger.shipments.some((s) => s.items.some((i) => i.product === id));
   if (used) throw new HttpError(400, `${id} is on an invoice or shipment, so it can't be deleted`);
   if (!deleteRecord(ctx.db, 'product', id, { actor: ctx.actor })) throw notFound(`Product ${id}`);

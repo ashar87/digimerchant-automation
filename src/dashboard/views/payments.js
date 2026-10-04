@@ -6,6 +6,7 @@ import { text, number, date, required, rows, compact, uniqueId } from '../forms.
 import { HttpError, notFound } from '../errors.js';
 import { enc } from './common.js';
 import { history } from './orders.js';
+import { versionField, assertFresh } from '../versions.js';
 import { paymentFromTransfer } from '../../wise/import.js';
 import { paymentsNeedingRate } from '../../quickbooks/rates.js';
 
@@ -63,6 +64,7 @@ ${fromWise ? html`<p class="notice">Filled in from the Wise transfer of ${fromWi
 ${p?.id ? rateStatus(ctx, p) : ''}
 <form class="card" method="post" action="/payments${p?.id ? `/${enc(p.id)}` : ''}">
 ${fromWise ? html`<input type="hidden" name="wise" value="${fromWise.wise}">` : ''}
+${p?.id ? versionField(p) : ''}
 <div class="grid">
   <div><label>Date (required)</label><input type="date" name="date" value="${p?.date || ''}" required></div>
   <div><label>Wise reference</label><input name="reference" value="${p?.reference || ''}" placeholder="PO-020 30%"></div>
@@ -86,14 +88,16 @@ ${allocations.map((a) => html`<tr><td>${select('alloc_type', TYPES, a.type || 'o
 <label><input type="text" name="notes" value="${p?.notes || ''}" placeholder="Notes" style="width:100%"></label>
 <p><button>${p?.id ? 'Save payment' : 'Record payment'}</button></p>
 </form>
-${p?.id ? html`<form method="post" action="/payments/${enc(p.id)}/delete"><button class="danger">Delete payment</button></form>${history(ctx, 'payment', p.id)}` : ''}`;
+${p?.id ? html`<form method="post" action="/payments/${enc(p.id)}/delete">${versionField(p)}<button class="danger">Delete payment</button></form>${history(ctx, 'payment', p.id)}` : ''}`;
   return { title: p?.id || 'New payment', body };
 }
 
 export function savePayment(ctx) {
   const { ledger } = ctx.data;
   const existingId = ctx.params[0];
-  if (existingId && !ledger.payments.some((p) => p.id === existingId)) throw notFound(`Payment ${existingId}`);
+  const existing = existingId ? ledger.payments.find((p) => p.id === existingId) : null;
+  if (existingId && !existing) throw notFound(`Payment ${existingId}`);
+  if (existing) assertFresh(ctx, 'payment', existingId, existing, `/payments/${enc(existingId)}`);
   const f = ctx.form;
   const d = date(f.get('date'), 'Date', { required: true });
 
@@ -131,6 +135,8 @@ export function savePayment(ctx) {
 }
 
 export function deletePayment(ctx) {
+  const existing = ctx.data.ledger.payments.find((p) => p.id === ctx.params[0]);
+  if (existing) assertFresh(ctx, 'payment', existing.id, existing, `/payments/${enc(existing.id)}`);
   if (!deleteRecord(ctx.db, 'payment', ctx.params[0], { actor: ctx.actor })) throw notFound(`Payment ${ctx.params[0]}`);
   return { redirect: '/payments?ok=Payment+deleted.' };
 }

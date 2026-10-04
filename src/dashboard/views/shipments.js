@@ -4,6 +4,7 @@ import { text, number, date, required, rows, compact } from '../forms.js';
 import { HttpError, notFound } from '../errors.js';
 import { MARKETPLACES, productOptions, poOptions, productName, enc } from './common.js';
 import { history } from './orders.js';
+import { versionField, assertFresh } from '../versions.js';
 import { amazonPanel } from './amazon.js';
 
 const BLANK_ITEMS = 3;
@@ -56,6 +57,7 @@ ${batches.length
   : ''}
 
 <form class="card" method="post" action="/shipments${s ? `/${enc(s.id)}` : ''}">
+${s ? versionField(s) : ''}
 <div class="grid">
   <div><label>FBA shipment ID</label><input name="id" value="${s?.id || ''}" ${s ? 'readonly' : 'required'} pattern="FBA[A-Z0-9]+"></div>
   <div><label>Marketplace</label>${select('marketplace', MARKETPLACES, marketplace || 'UK')}</div>
@@ -73,7 +75,7 @@ ${items.map((i) => html`<tr><td>${select('item_product', productOptions(ledger, 
 <p class="muted small">Received counts only count once the shipment is Closed. Until then, costs use units shipped and ordered.</p>
 <p><label style="display:inline;color:inherit"><input type="checkbox" name="sellerboardManual" value="1"${s?.sellerboardManual ? ' checked' : ''}> Its cost was typed into Sellerboard by hand — keep it out of the feed</label></p>
 <button>${s ? 'Save shipment' : 'Add shipment'}</button></form>
-${s ? html`<form method="post" action="/shipments/${enc(s.id)}/delete"><button class="danger">Delete shipment</button></form>${history(ctx, 'shipment', s.id)}` : ''}`;
+${s ? html`<form method="post" action="/shipments/${enc(s.id)}/delete">${versionField(s)}<button class="danger">Delete shipment</button></form>${history(ctx, 'shipment', s.id)}` : ''}`;
   return { title: s ? s.id : 'New shipment', body };
 }
 
@@ -83,6 +85,7 @@ export function saveShipment(ctx) {
   const existingId = ctx.params[0];
   const existing = existingId ? ledger.shipments.find((x) => x.id === existingId) : null;
   if (existingId && !existing) throw notFound(`Shipment ${existingId}`);
+  if (existing) assertFresh(ctx, 'shipment', existingId, existing, `/shipments/${enc(existingId)}`);
   const id = existingId || required(text(f, 'id'), 'FBA shipment ID').toUpperCase();
   if (!existingId && !/^FBA[A-Z0-9]+$/.test(id)) throw new HttpError(400, 'FBA shipment IDs look like FBA15ABC1234');
   if (!existingId && ledger.shipments.some((x) => x.id === id)) throw new HttpError(400, `${id} already exists`);
@@ -120,6 +123,8 @@ export function saveShipment(ctx) {
 }
 
 export function deleteShipment(ctx) {
+  const existing = ctx.data.ledger.shipments.find((x) => x.id === ctx.params[0]);
+  if (existing) assertFresh(ctx, 'shipment', existing.id, existing, `/shipments/${enc(existing.id)}`);
   if (!deleteRecord(ctx.db, 'shipment', ctx.params[0], { actor: ctx.actor })) throw notFound(`Shipment ${ctx.params[0]}`);
   return { redirect: '/shipments?ok=Shipment+deleted.' };
 }

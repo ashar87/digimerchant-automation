@@ -1,6 +1,7 @@
 import { html } from '../html.js';
 import { getSetting } from '../../landing/store.js';
 import { refHref, enc } from './common.js';
+import { versionField } from '../versions.js';
 import { awaitingReply } from '../../notify/outbox.js';
 import { unmappedSkus, lastSync } from './amazon.js';
 import { pendingDrafts } from '../../invoices/intake.js';
@@ -45,6 +46,7 @@ export function inboxItems(ctx) {
       detail: o.source ? `From the sheet: ${o.source}` : null,
       href: `/orders/${enc(o.po)}`,
       review: o.po,
+      order: o,
       count: true,
     });
   }
@@ -68,7 +70,7 @@ ${items.length
   ? html`<div class="card"><ul class="items">${items.map(
       (i) => html`<li><span class="sev ${i.tone}">${i.tone === 'error' ? '✗' : i.tone === 'warning' ? '!' : 'i'}</span>
       <div style="flex:1">${i.href ? html`<a href="${i.href}">${i.title}</a>` : i.title}${i.detail ? html`<div class="muted small">${i.detail}</div>` : ''}</div>
-      ${i.review ? html`<form class="inline" method="post" action="/orders/${enc(i.review)}/review"><input type="hidden" name="back" value="/"><button class="ghost">Mark checked</button></form>` : ''}
+      ${i.review ? html`<form class="inline" method="post" action="/orders/${enc(i.review)}/review"><input type="hidden" name="back" value="/">${versionField(i.order)}<button class="ghost">Mark checked</button></form>` : ''}
       ${i.card ? html`<form class="inline" method="post" action="/cards/${i.card}/reply"><button name="reply" value="Y">Link</button> <button class="ghost" name="reply" value="N">Not this</button></form>` : ''}</li>`
     )}</ul></div>`
   : ''}
