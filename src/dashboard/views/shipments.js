@@ -61,10 +61,10 @@ ${s ? versionField(s) : ''}
 <div class="grid">
   <div><label>FBA shipment ID</label><input name="id" value="${s?.id || ''}" ${s ? 'readonly' : 'required'} pattern="FBA[A-Z0-9]+"></div>
   <div><label>Marketplace</label>${select('marketplace', MARKETPLACES, marketplace || 'UK')}</div>
-  <div><label>Name in Send to Amazon</label><input name="name" value="${s?.name || ''}" placeholder="PO-020 UK"></div>
+  <div><label>Name in Send to Amazon</label><input name="name" value="${s?.name || ''}" placeholder="PO-020 UK, or PO-020 PO-021 UK"></div>
   <div><label>Amazon status</label>${select('status', SHIPMENT_STATUSES.map((x) => ({ value: x, label: shipmentStatusLabel(x) })), s?.status, { blank: true })}</div>
   <div><label>Created</label><input type="date" name="createdAt" value="${s?.createdAt || ''}"></div>
-  <div><label>Amazon started receiving</label><input type="date" name="firstReceivedAt" value="${s?.firstReceivedAt || ''}"></div>
+  <div><label>Amazon started receiving (Sellerboard batch date)</label><input type="date" name="firstReceivedAt" value="${s?.firstReceivedAt || ''}"></div>
 </div>
 <h3>Contents — link each line to its order</h3>
 <div class="scroll"><table class="rows"><thead><tr><th>Product</th><th>Order</th><th>Units shipped</th><th>Units received</th></tr></thead><tbody>

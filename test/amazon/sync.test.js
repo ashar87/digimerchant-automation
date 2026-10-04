@@ -124,3 +124,35 @@ test('a landing cost moving more than 2% after a sync gets a card; the first sig
   const card = unsent(db).find((c) => c.kind === 'cost_change');
   assert.match(card.text, /A UK in FBA1: landing cost £1\.1000 → £1\.2000 \(\+9\.1%\)/);
 });
+
+test('a shipment named with two POs links each product to the order that has it', async () => {
+  const db = setup();
+  const client = recordedSpApi({ shipments: { UK: [shipment('FBA5', 'WORKING', 'PO-001 PO-002 UK')] }, items: { FBA5: [item('SKU-A', 300, 0), item('ANY', 200, 0, 'X00B')] } });
+  const report = await syncAmazon({ db, client });
+  assert.deepEqual(report.linked, ['FBA5']);
+  const s = loadLedger(db).shipments.find((x) => x.id === 'FBA5');
+  assert.deepEqual(s.items.map((i) => [i.product, i.po]), [['A-UK', 'PO-001'], ['B-UK', 'PO-002']]);
+  assert.equal(awaitingReply(db).length, 0);
+});
+
+test('when two named POs both have the product, it asks for a split instead of guessing', async () => {
+  const db = setup();
+  const l = loadLedger(db);
+  l.orders[1].invoices[0].lines.push({ kind: 'goods', product: 'A-UK', qty: 100, rmb: 1000 });
+  saveLedger(db, { orders: [l.orders[1]] }, { actor: 'test' });
+  const client = recordedSpApi({ shipments: { UK: [shipment('FBA6', 'WORKING', 'po-001 / PO-002 UK')] }, items: { FBA6: [item('SKU-A', 300, 0), item('ANY', 200, 0, 'X00B')] } });
+  await syncAmazon({ db, client });
+  const s = loadLedger(db).shipments.find((x) => x.id === 'FBA6');
+  assert.deepEqual(s.items.map((i) => [i.product, i.po ?? null]), [['A-UK', null], ['B-UK', 'PO-002']]);
+  const cards = unsent(db);
+  assert.match(cards.find((c) => c.kind === 'split_needed').text, /carries Leaf A from PO-001 and PO-002/);
+  assert.ok(!cards.some((c) => c.kind === 'link_request'));
+});
+
+test('a PO in the name that isn’t on file links nothing and asks instead', async () => {
+  const db = setup();
+  const client = recordedSpApi({ shipments: { UK: [shipment('FBA7', 'WORKING', 'PO-999 UK')] }, items: { FBA7: [item('ANY', 495, 0, 'X00B')] } });
+  await syncAmazon({ db, client });
+  assert.equal(loadLedger(db).shipments.find((x) => x.id === 'FBA7').items[0].po, undefined);
+  assert.match(awaitingReply(db)[0].text, /Matches PO-002/);
+});

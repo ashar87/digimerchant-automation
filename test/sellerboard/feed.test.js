@@ -32,11 +32,11 @@ const ledger = () => ({
     { id: 'FBA-UK', marketplace: 'UK', status: 'CLOSED', createdAt: '2026-01-10', firstReceivedAt: '2026-01-20', items: [{ product: 'A-UK', po: 'PO-1', shipped: 100, received: 100 }, { product: 'C-UK', po: 'PO-1', shipped: 100, received: 100 }] },
     { id: 'FBA-US', marketplace: 'US', status: 'SHIPPED', createdAt: '2026-01-12', items: [{ product: 'A-US', po: 'PO-2', shipped: 50 }] },
     { id: 'FBA-OLD', marketplace: 'UK', status: 'CLOSED', createdAt: '2025-12-01', sellerboardManual: true, items: [{ product: 'A-UK', shipped: 1, received: 1 }] },
-    { id: 'FBA-NEW', marketplace: 'UK', status: 'SHIPPED', createdAt: '2026-01-15', items: [{ product: 'A-UK', po: 'PO-3', shipped: 10 }] },
+    { id: 'FBA-NEW', marketplace: 'UK', status: 'RECEIVING', createdAt: '2026-01-15', firstReceivedAt: '2026-01-25', items: [{ product: 'A-UK', po: 'PO-3', shipped: 10 }] },
   ],
 });
 
-test('one row per product per shipment, GBP for the UK, USD for the US, dated by first receipt', () => {
+test('one row per product per shipment, GBP for the UK, USD for the US, added and dated when receiving starts', () => {
   const l = ledger();
   const feed = buildFeed(l, computeLandingCosts(l));
   const uk = feed.rows.find((r) => r.shipment === 'FBA-UK');
@@ -44,11 +44,20 @@ test('one row per product per shipment, GBP for the UK, USD for the US, dated by
     { sku: uk.sku, marketplace: uk.marketplace, date: uk.date, quantity: uk.quantity, cost: uk.cost, currency: uk.currency, status: uk.status },
     { sku: 'SKU-A', marketplace: 'Amazon.co.uk', date: '2026-01-20', quantity: '100', cost: '1.1125', currency: 'GBP', status: 'final' }, // 1.00 + 40×0.75×300/400÷200
   );
-  const us = feed.rows.find((r) => r.shipment === 'FBA-US');
-  assert.equal(us.currency, 'USD');
-  assert.equal(us.asin, 'B000TEST');
-  assert.equal(us.date, '2026-01-12');
-  assert.equal(us.dateProvisional, true); // not received yet
+  // Shipped but not received: nothing goes to Sellerboard until Amazon starts receiving.
+  assert.equal(feed.rows.find((r) => r.shipment === 'FBA-US'), undefined);
+  assert.match(feed.held.find((h) => h.shipment === 'FBA-US').reason, /Not received yet/);
+
+  l.shipments[1].firstReceivedAt = '2026-02-20';
+  const us = buildFeed(l, computeLandingCosts(l)).rows.find((r) => r.shipment === 'FBA-US');
+  assert.deepEqual({ currency: us.currency, asin: us.asin, date: us.date }, { currency: 'USD', asin: 'B000TEST', date: '2026-02-20' });
+});
+
+test('a shipment marked received or closed without a receiving date is held, with what to do', () => {
+  const l = ledger();
+  l.shipments[0].firstReceivedAt = undefined;
+  const held = buildFeed(l, computeLandingCosts(l)).held.find((h) => h.shipment === 'FBA-UK' && h.product === 'A-UK');
+  assert.match(held.reason, /date it started isn’t recorded/);
 });
 
 test('held back, with a reason: typed in by hand, unchecked imports, no SKU', () => {
@@ -78,7 +87,7 @@ test('the Sheets writer logs in with a signed service-account token, clears the 
   const writer = createSheetsWriter({ key: { client_email: 'feed@test.iam.gserviceaccount.com', private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }) }, sheetId: 'SHEET1', tab: 'COGS', fetch });
   const l = ledger();
   const out = await writer.replaceTab(feedValues(buildFeed(l, computeLandingCosts(l)).rows));
-  assert.equal(out.rows, 2);
+  assert.equal(out.rows, 1);
 
   const assertion = new URLSearchParams(calls[0].init.body).get('assertion');
   const [h, p, sig] = assertion.split('.');

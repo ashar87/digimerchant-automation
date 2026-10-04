@@ -15,7 +15,7 @@ import { queueCostChanges } from '../notify/costs.js';
 
 const DONE = new Set(['CLOSED', 'CANCELLED', 'DELETED']);
 const RECEIVING = new Set(['RECEIVING', 'CLOSED']);
-const PO_IN_NAME = /\bPO-\d{1,5}\b/i;
+const PO_IN_NAME_ALL = /\bPO-\d{1,5}\b/gi;
 // A shortfall worth a card: at least this many units and this share of the line.
 const SHORTFALL_UNITS = 5;
 const SHORTFALL_SHARE = D('0.01');
@@ -139,22 +139,30 @@ export function mergeShipment({ existing, amazon, items, marketplace, ledger, to
   if (existing && existing.status !== status && status === 'CLOSED') events.push({ type: 'closed', shipment: shipment.id });
   if (!existing && status === 'CLOSED') events.push({ type: 'closed', shipment: shipment.id });
 
-  // PO number in the name ("PO-041 US") links whatever isn't linked yet.
-  const po = (shipment.name || '').match(PO_IN_NAME)?.[0]?.toUpperCase();
-  if (po) {
-    const order = ledger.orders.find((o) => o.po === po && o.marketplace === marketplace);
-    const onOrder = new Set((order?.invoices || []).flatMap((inv) => inv.lines.filter((l) => l.kind === 'goods').map((l) => l.product)));
-    let linked = false;
+  // PO numbers in the name ("PO-041 US", or "PO-041 PO-043 UK" for a mixed
+  // shipment) link whatever isn't linked yet: each line goes to the one named
+  // order whose invoice has that product. If two named orders both have it,
+  // the split is left to a person.
+  const named = [...new Set(((shipment.name || '').match(PO_IN_NAME_ALL) || []).map((p) => p.toUpperCase()))];
+  if (named.length) {
+    const orders = named.map((po) => ledger.orders.find((o) => o.po === po && o.marketplace === marketplace)).filter(Boolean);
+    for (const po of named) if (!orders.some((o) => o.po === po)) events.push({ type: 'name_po_unknown', shipment: shipment.id, po });
+    const products = (o) => new Set((o.invoices || []).flatMap((inv) => inv.lines.filter((l) => l.kind === 'goods').map((l) => l.product)));
+    const linked = new Set();
     for (const i of shipment.items) {
-      if (!i.po && order && onOrder.has(i.product)) {
-        i.po = po;
-        linked = true;
+      if (i.po) continue;
+      const fits = orders.filter((o) => products(o).has(i.product));
+      if (fits.length === 1) {
+        i.po = fits[0].po;
+        linked.add(fits[0].po);
+      } else if (fits.length > 1) {
+        events.push({ type: 'split_needed', shipment: shipment.id, product: i.product, pos: fits.map((o) => o.po) });
       }
     }
-    if (linked) events.push({ type: 'linked_by_name', shipment: shipment.id, po });
-    if (!order) events.push({ type: 'name_po_unknown', shipment: shipment.id, po });
+    if (linked.size) events.push({ type: 'linked_by_name', shipment: shipment.id, po: [...linked].join(', ') });
   }
-  if (shipment.items.some((i) => !i.po)) events.push({ type: 'needs_link', shipment: shipment.id });
+  const toSplit = new Set(events.filter((e) => e.type === 'split_needed').map((e) => e.product));
+  if (shipment.items.some((i) => !i.po && !toSplit.has(i.product))) events.push({ type: 'needs_link', shipment: shipment.id });
 
   return { shipment, events, unmapped };
 }
@@ -193,8 +201,18 @@ function queueEventCards(db, events, before, after, ledger) {
       }
     }
 
+    if (e.type === 'split_needed') {
+      const name = ledger.products.find((p) => p.id === e.product)?.name || e.product;
+      q({
+        kind: 'split_needed',
+        dedupeKey: `split:${shipment.id}:${e.product}`,
+        text: [`✂️ ${shipment.id} (${shipment.marketplace}) carries ${name} from ${e.pos.join(' and ')}.`, 'Split the units between them on the dashboard (Shipments).'].join('\n'),
+      });
+    }
+
     if (e.type === 'needs_link') {
-      const unlinked = shipment.items.filter((i) => !i.po);
+      const toSplit = new Set(events.filter((x) => x.type === 'split_needed' && x.shipment === shipment.id).map((x) => x.product));
+      const unlinked = shipment.items.filter((i) => !i.po && !toSplit.has(i.product));
       const candidate = suggestOrder(ledger, shipment, unlinked);
       q({
         kind: 'link_request',

@@ -11,7 +11,7 @@ export function sellerboardPage(ctx) {
   const last = lastSync(ctx.db, 'sellerboard');
   const body = html`
 <h1>Sellerboard</h1>
-<p class="sub">One row per product per shipment, read by Sellerboard’s automatic COGS import each day. GBP for the UK and DE, USD for the US; dated the day Amazon started receiving.</p>
+<p class="sub">One row per product per shipment, read by Sellerboard’s automatic COGS import each day. A shipment is added the day Amazon starts receiving it, and dated that day. GBP for the UK and DE, USD for the US.</p>
 ${ctx.sheets
   ? html`<form class="card" method="post" action="/sellerboard/publish">${last ? html`Google Sheet last written ${last.at.slice(0, 16).replace('T', ' ')} ${last.ok ? `✓ (${last.summary.rows} rows)` : html`<span class="badge bad">failed: ${(last.summary.errors || []).join('; ')}</span>`}` : 'Google Sheet not written yet.'}
 <button class="ghost" style="margin-left:12px">Write now</button></form>`
@@ -21,8 +21,8 @@ ${ctx.sheets
 <h2>${feed.rows.length} row${feed.rows.length === 1 ? '' : 's'} for Sellerboard</h2>
 ${feed.rows.length
   ? html`<div class="card scroll"><table><thead><tr>${COLUMNS.map((c) => html`<th>${c.header}</th>`)}</tr></thead><tbody>
-${feed.rows.map((r) => html`<tr>${COLUMNS.map((c) => html`<td class="${['quantity', 'cost'].includes(c.key) ? 'n' : ''}">${r[c.key]}${c.key === 'date' && r.dateProvisional ? '*' : ''}</td>`)}</tr>`)}
-</tbody></table>${feed.rows.some((r) => r.dateProvisional) ? html`<p class="muted small">* Not received yet: dated by when the shipment was created until Amazon starts receiving.</p>` : ''}</div>`
+${feed.rows.map((r) => html`<tr>${COLUMNS.map((c) => html`<td class="${['quantity', 'cost'].includes(c.key) ? 'n' : ''}">${r[c.key]}</td>`)}</tr>`)}
+</tbody></table></div>`
   : html`<p class="muted">Nothing yet.</p>`}
 
 <h2>Held back (${feed.held.length})</h2>

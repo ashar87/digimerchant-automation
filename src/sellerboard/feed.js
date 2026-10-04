@@ -4,7 +4,8 @@
  * Sheet or a CSV link. FIFO, so each shipment's stock sells at its own cost.
  *
  * GBP for the UK and DE (Sellerboard wants GBP for DE too), USD for the US.
- * The batch date is the day Amazon started receiving the shipment.
+ * A batch only goes in once Amazon starts receiving it, dated that day: that's
+ * when the stock becomes sellable and the inventory level starts to rise.
  *
  * Column headers must match Sellerboard's COGS template. They're defined once
  * here: if Sellerboard's template names them differently, change COLUMNS.
@@ -46,6 +47,11 @@ export function buildFeed(ledger, result) {
       hold('Typed into Sellerboard by hand; the feed leaves it alone.');
       continue;
     }
+    if (!s?.firstReceivedAt) {
+      const arrived = ['RECEIVING', 'CLOSED'].includes(s?.status);
+      hold(arrived ? 'Amazon is receiving it, but the date it started isn’t recorded. Enter it on the shipment.' : 'Not received yet: added the day Amazon starts receiving it.');
+      continue;
+    }
     if (b.landingCost === null || b.status === 'incomplete') {
       hold('Cost not known yet.');
       continue;
@@ -67,8 +73,7 @@ export function buildFeed(ledger, result) {
       sku: p.sku || '',
       asin: p.asin || '',
       marketplace: MARKETPLACE_NAMES[b.marketplace],
-      date: s.firstReceivedAt || s.createdAt || '',
-      dateProvisional: !s.firstReceivedAt,
+      date: s.firstReceivedAt,
       quantity: b.units.toString(),
       cost: fmt4(b.landingCost),
       currency: b.currency,

@@ -21,8 +21,7 @@ const ledger = loadLedger(db);
 const feed = buildFeed(ledger, computeLandingCosts(ledger));
 
 console.log(`${feed.rows.length} row(s) for Sellerboard, ${feed.held.length} held back.\n`);
-for (const r of feed.rows) console.log(`  ${(r.sku || r.asin).padEnd(14)} ${r.marketplace.padEnd(13)} ${r.date}${r.dateProvisional ? '*' : ' '} ${r.quantity.padStart(6)}  ${r.cost} ${r.currency}  ${r.shipment}  ${r.status}`);
-if (feed.rows.some((r) => r.dateProvisional)) console.log('  * not received yet: dated by when the shipment was created, until Amazon starts receiving');
+for (const r of feed.rows) console.log(`  ${(r.sku || r.asin).padEnd(14)} ${r.marketplace.padEnd(13)} ${r.date} ${r.quantity.padStart(6)}  ${r.cost} ${r.currency}  ${r.shipment}  ${r.status}`);
 if (feed.held.length) {
   console.log('\n  Held back:');
   for (const h of feed.held) console.log(`  ${`${h.code || h.product} ${h.marketplace} ${h.shipment}`.padEnd(32)} ${h.reason}`);
