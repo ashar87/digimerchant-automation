@@ -7,12 +7,17 @@
  *   npm run landing:import -- private/import/open-orders.json            # writes data/landing.db
  *   npm run landing:import -- private/import/open-orders.json --dry-run  # shows what would happen
  *
- * The file is read-only input (the sheet itself is never touched). Orders
- * someone has already marked checked are left alone unless --force is given.
+ * The file is read-only input (the sheet itself is never touched). Running it
+ * again only replaces records nobody has touched since the last import: anything
+ * edited on the dashboard, updated by the Amazon sync, or marked checked is kept,
+ * unless --force is given.
  */
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { config } from '../src/config.js';
-import { openLandingDb, saveLedger, loadLedger } from '../src/landing/store.js';
+import { openLandingDb, loadLedger } from '../src/landing/store.js';
+import { importLedger } from '../src/landing/importer.js';
 import { computeLandingCosts } from '../src/landing/engine.js';
 import { fmt4 } from '../src/landing/money.js';
 
@@ -36,30 +41,24 @@ if (!file) {
 }
 
 const input = JSON.parse(fs.readFileSync(file, 'utf8'));
-const incoming = structuredClone(input.ledger || input);
-const db = openLandingDb(dryRun ? ':memory:' : dbPath);
-const current = loadLedger(db);
-
-const reviewed = new Set(current.orders.filter((o) => o.review === 'reviewed').map((o) => o.po));
-const skipped = [];
-if (!force) {
-  incoming.orders = (incoming.orders || []).filter((o) => {
-    if (reviewed.has(o.po)) skipped.push(o.po);
-    return !reviewed.has(o.po);
-  });
+let db = openLandingDb(dbPath);
+if (dryRun) {
+  // A dry run works on a throwaway copy of the real database, so it shows what would change.
+  const copy = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'landing-import-')), 'landing.db');
+  await db.backup(copy);
+  db = openLandingDb(copy);
+  process.on('exit', () => fs.rmSync(path.dirname(copy), { recursive: true, force: true }));
 }
-for (const o of incoming.orders || []) o.review = 'needs_review';
-
-// Validate before writing: a broken import should fail whole, not half-land.
-const preview = computeLandingCosts(mergeForPreview(current, incoming));
-const errors = preview.issues.filter((i) => i.severity === 'error');
-
-saveLedger(db, incoming, { actor: 'import' });
+const report = importLedger(db, input, { force });
 const result = computeLandingCosts(loadLedger(db));
 
+const NAMES = { orders: 'orders', payments: 'payments', courierBills: 'courier bills', shipments: 'shipments', products: 'products' };
+const line = (what) => Object.entries(report[what]).filter(([, ids]) => ids.length).map(([k, ids]) => `${ids.length} ${NAMES[k]}`).join(', ') || 'nothing';
 console.log(`${dryRun ? 'Dry run — nothing written.' : `Imported into ${dbPath}.`}`);
-console.log(`  ${incoming.orders?.length || 0} orders (marked “needs review”), ${incoming.payments?.length || 0} payments, ${incoming.courierBills?.length || 0} courier bills, ${incoming.shipments?.length || 0} shipments, ${incoming.products?.length || 0} products`);
-if (skipped.length) console.log(`  Left alone (already checked): ${skipped.join(', ')}. Use --force to overwrite.`);
+console.log(`  Added: ${line('added')}`);
+console.log(`  Replaced (untouched since the last import): ${line('replaced')}`);
+console.log(`  Kept as they are (edited, synced or checked since): ${line('kept')}${force ? '' : '. Use --force to overwrite them.'}`);
+console.log('  Imported orders are marked “needs review” until checked on the dashboard.');
 console.log('\n  Batch                          Product   Delivery   Landing   Status');
 for (const b of result.batches) {
   const sym = b.currency === 'USD' ? '$' : '£';
@@ -71,16 +70,6 @@ if (flagged.length) {
   console.log('\n  To look at:');
   for (const i of flagged) console.log(`  ${i.severity === 'error' ? '✗' : '!'} ${i.message}`);
 }
+const errors = result.issues.filter((i) => i.severity === 'error');
 if (errors.length) console.log(`\n  ${errors.length} error(s) above stop those costs being worked out until fixed.`);
 console.log(dryRun ? '' : '\n  Open the dashboard (npm run dashboard) and check each order in the Inbox.\n');
-
-function mergeForPreview(a, b) {
-  const merge = (x = [], y = [], key) => [...x.filter((r) => !y.some((s) => s[key] === r[key])), ...y];
-  return {
-    products: merge(a.products, b.products, 'id'),
-    orders: merge(a.orders, b.orders, 'po'),
-    payments: merge(a.payments, b.payments, 'id'),
-    courierBills: merge(a.courierBills, b.courierBills, 'id'),
-    shipments: merge(a.shipments, b.shipments, 'id'),
-  };
-}

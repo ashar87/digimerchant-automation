@@ -132,8 +132,8 @@ export function computeLandingCosts(ledger) {
     shipmentResults.set(s.id, { id: s.id, marketplace: s.marketplace, currency, status: s.status, closed, shippedUnits, receivedUnits, delivery });
   }
 
-  // Before a courier bill arrives, borrow the most recent actual: first from a
-  // shipment carrying the same product to the same marketplace, then any.
+  // Before a courier bill arrives, borrow the most recent actual from a shipment
+  // carrying the same product to the same marketplace; otherwise wait for the bill.
   for (const s of shipments) {
     const r = shipmentResults.get(s.id);
     if (r.delivery.basis === 'billed') continue;
@@ -149,7 +149,7 @@ export function computeLandingCosts(ledger) {
         estimateMatch: source.match,
       };
     } else {
-      issue('info', 'no_delivery_estimate', s.id, `${s.id} has no courier bill yet and no earlier ${s.marketplace} shipment to estimate from.`);
+      issue('warning', 'no_delivery_estimate', s.id, `${s.id} has no courier bill yet, and no earlier billed ${s.marketplace} shipment of the same product to estimate delivery from. Its landing cost waits for the bill.`);
     }
   }
 
@@ -469,10 +469,11 @@ function estimateSource(s, shipments, shipmentResults) {
     return !s.createdAt || !c.createdAt || c.createdAt <= s.createdAt;
   });
   const newestFirst = (a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+  // Only a shipment carrying the same product is a fair guide. Delivery per unit
+  // ranges from pennies (gold leaf) to pounds (garlands), so borrowing from any
+  // other product could put a badly wrong cost into Sellerboard.
   const sameProduct = candidates.filter((c) => (c.items || []).some((i) => products.has(i.product))).sort(newestFirst);
-  if (sameProduct.length) return { id: sameProduct[0].id, match: 'product' };
-  const any = [...candidates].sort(newestFirst);
-  return any.length ? { id: any[0].id, match: 'marketplace' } : null;
+  return sameProduct.length ? { id: sameProduct[0].id, match: 'product' } : null;
 }
 
 /* ---------------------------- batches ---------------------------- */
@@ -506,7 +507,7 @@ function costBatch(s, sr, productId, items, products, orderResults, issue) {
   const landingCost = productCost !== null && deliveryCost !== null ? productCost.plus(deliveryCost) : null;
 
   let status;
-  if (productCost === null) status = 'incomplete';
+  if (productCost === null || landingCost === null) status = 'incomplete';
   else if (parts.some((p) => p.order?.paidStatus !== 'paid')) status = 'provisional';
   else if (sr.delivery.basis !== 'billed') status = 'estimated';
   else if (!sr.closed || parts.some((p) => p.line?.basis !== 'received')) status = 'count_pending';

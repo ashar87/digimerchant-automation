@@ -193,7 +193,7 @@ test('courier bills: by shipment, shared fees by RMB share, USD for US and GBP f
   assert.equal(fmt4(us.delivery.perUnit), '1.3500'); // not closed: over units shipped
 });
 
-test('before the bill, delivery is estimated from the same product first, then the marketplace', () => {
+test('before the bill, delivery is estimated only from a shipment of the same product', () => {
   const billed = (id, product, createdAt, rmb) => ({ ...shipment(id, 'UK', 'CLOSED', [{ product, shipped: 100, received: 100 }]), createdAt });
   const r = run({
     shipments: [
@@ -210,8 +210,11 @@ test('before the bill, delivery is estimated from the same product first, then t
   assert.equal(openA.basis, 'estimated');
   assert.equal(openA.estimatedFrom, 'OLD-A');
   assert.equal(fmt4(openA.perUnit), '0.1000');
-  assert.equal(openC.estimatedFrom, 'NEWER-B');
-  assert.equal(fmt4(openC.perUnit), '0.2000');
+  // Nothing earlier carried X: no estimate is borrowed from B, and it's flagged.
+  assert.equal(openC.basis, 'none');
+  assert.equal(openC.perUnit, null);
+  const flag = r.issues.find((i) => i.code === 'no_delivery_estimate' && i.ref === 'OPEN-C');
+  assert.equal(flag.severity, 'warning');
 });
 
 test('batch status follows payment, bill and Amazon count', () => {
@@ -231,10 +234,20 @@ test('batch status follows payment, bill and Amazon count', () => {
   counting.shipments[0].status = 'RECEIVING';
   assert.equal(batch(run(counting), 'FBA1', 'A-UK').status, 'count_pending');
 
+  // No bill yet, but an earlier billed shipment of the same product: estimated.
   const noBill = base();
-  noBill.courierBills = [];
-  noBill.payments.pop();
+  noBill.shipments[0].createdAt = '2026-03-01';
+  noBill.shipments.unshift(shipment('EARLIER', 'UK', 'CLOSED', [{ product: 'A-UK', shipped: 10, received: 10 }]));
+  noBill.courierBills[0].lines[0].shipment = 'EARLIER';
   assert.equal(batch(run(noBill), 'FBA1', 'A-UK').status, 'estimated');
+
+  // No bill and nothing to estimate from: the landing cost waits.
+  const nothing = base();
+  nothing.courierBills = [];
+  nothing.payments.pop();
+  const b = batch(run(nothing), 'FBA1', 'A-UK');
+  assert.equal(b.status, 'incomplete');
+  assert.equal(b.landingCost, null);
 
   const depositOnly = base();
   depositOnly.payments.splice(1, 1);
