@@ -148,6 +148,7 @@ button.ghost{background:transparent;color:var(--accent)}button.danger{background
 details{margin:6px 0}summary{cursor:pointer;color:var(--accent)}
 dl.working{display:grid;grid-template-columns:max-content 1fr;gap:4px 16px;margin:8px 0}
 dl.working dt{color:var(--muted)}dl.working dd{margin:0;font-variant-numeric:tabular-nums}
+.pager{display:flex;gap:18px;align-items:center}
 .notice{background:var(--wait-bg);color:var(--wait);padding:8px 12px;border-radius:8px;margin:10px 0}
 @media (max-width:640px){main{padding:12px 12px 40px}th,td{padding:5px 6px}}
 `;

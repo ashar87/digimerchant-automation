@@ -16,24 +16,69 @@ const BLANK_LINES = 6;
 
 /* ---------------------------- list ---------------------------- */
 
+// Where an order is in its life, for the list and its filter.
+export const STAGES = {
+  unpaid: ['Not paid', 'bad'],
+  deposit: ['Deposit paid', 'wait'],
+  ready: ['Paid, not shipped', 'est'],
+  shipping: ['Shipped / receiving', 'wait'],
+  complete: ['Received', 'ok'],
+};
+
+export function orderStage(r, ledger) {
+  if (r.paidStatus === 'unpaid') return 'unpaid';
+  if (r.paidStatus === 'deposit_paid') return 'deposit';
+  const shipped = ledger.shipments.some((s) => s.items.some((i) => i.po === r.po));
+  if (!shipped) return 'ready';
+  return r.lines.length && r.lines.every((l) => l.basis === 'received') ? 'complete' : 'shipping';
+}
+
+const PAGE_SIZE = 20;
+
 export function ordersPage(ctx) {
   const { ledger, result } = ctx.data;
   const byPo = new Map(result.orders.map((o) => [o.po, o]));
+  const q = ctx.url.searchParams;
+  const filters = {
+    market: MARKETPLACES.includes(q.get('market')) ? q.get('market') : '',
+    stage: STAGES[q.get('stage')] ? q.get('stage') : '',
+    check: ['to_check', 'checked'].includes(q.get('check')) ? q.get('check') : '',
+    q: (q.get('q') || '').trim(),
+  };
+
+  const needle = filters.q.toLowerCase();
+  const matching = [...ledger.orders]
+    .sort((x, y) => Number(y.po.replace(/\D/g, '')) - Number(x.po.replace(/\D/g, '')) || y.po.localeCompare(x.po)) // newest first
+    .map((o) => ({ o, r: byPo.get(o.po) }))
+    .map((x) => ({ ...x, stage: orderStage(x.r, ledger) }))
+    .filter(({ o, stage }) => {
+      if (filters.market && o.marketplace !== filters.market) return false;
+      if (filters.stage && stage !== filters.stage) return false;
+      if (filters.check === 'to_check' && o.review !== 'needs_review') return false;
+      if (filters.check === 'checked' && o.review === 'needs_review') return false;
+      if (needle) {
+        const products = byPo.get(o.po).lines.map((l) => productName(ledger, l.product)).join(' ');
+        if (![o.po, o.supplier, products].join(' ').toLowerCase().includes(needle)) return false;
+      }
+      return true;
+    });
+
+  const pages = Math.max(1, Math.ceil(matching.length / PAGE_SIZE));
+  const page = Math.min(pages, Math.max(1, Number.parseInt(q.get('page'), 10) || 1));
+  const shown = matching.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const link = (n) => {
+    const params = new URLSearchParams(Object.entries(filters).filter(([, v]) => v));
+    if (n > 1) params.set('page', n);
+    const qs = params.toString();
+    return `/orders${qs ? `?${qs}` : ''}`;
+  };
+  const filtered = Object.values(filters).some(Boolean);
+
   const body = html`
 <h1>Orders</h1>
 <p class="sub">One page per order, in place of a 30% tab and a 70% tab that have to find each other.</p>
-<div class="card scroll"><table>
-<thead><tr><th>PO</th><th>Supplier</th><th>Mkt</th><th>Products</th><th>Invoice</th><th class="n">RMB</th><th>Paid</th><th></th></tr></thead>
-<tbody>${[...ledger.orders].reverse().map((o) => {
-  const r = byPo.get(o.po);
-  return html`<tr><td><a href="/orders/${enc(o.po)}">${o.po}</a></td><td>${o.supplier}</td><td>${o.marketplace}</td>
-  <td class="small">${r.lines.map((l, i) => html`${i ? ', ' : ''}${productName(ledger, l.product)} ×${units(l.ordered)}`)}</td>
-  <td class="small">${r.invoice ? `${r.invoice.kind} ${r.invoice.date || ''}` : '—'}</td><td class="n">${rmb(r.totalRmb)}</td>
-  <td>${badge(PAID_STATUS[r.paidStatus])}</td><td>${o.review === 'needs_review' ? badge(['To check', 'warn']) : ''}</td></tr>`;
-})}</tbody></table></div>
-
-<h2>New order</h2>
 <form class="card" method="post" action="/orders">
+<h2 style="margin-top:0">New order</h2>
 <div class="grid">
   <div><label>PO number (required)</label><input name="po" value="${nextPo(ctx.db)}" required pattern="PO-\\d+"></div>
   <div><label>Supplier</label><input name="supplier" required></div>
@@ -41,7 +86,33 @@ export function ordersPage(ctx) {
   <div><label>Notes</label><input name="notes"></div>
 </div>
 <button>Create order</button> <span class="muted small">Then add its proforma or invoice. Use the PO in the Wise reference (e.g. “${nextPo(ctx.db)} 30%”) and in the FBA shipment name.</span>
-</form>`;
+</form>
+
+<h2>Orders</h2>
+
+<form class="card" method="get" action="/orders"><div class="grid" style="margin-bottom:8px">
+  <div><label>Market</label>${select('market', [{ value: '', label: 'All' }, ...MARKETPLACES], filters.market)}</div>
+  <div><label>Status</label>${select('stage', [{ value: '', label: 'All' }, ...Object.entries(STAGES).map(([value, [label]]) => ({ value, label }))], filters.stage)}</div>
+  <div><label>Checked</label>${select('check', [{ value: '', label: 'All' }, { value: 'to_check', label: 'To check' }, { value: 'checked', label: 'Checked' }], filters.check)}</div>
+  <div><label>Search</label><input name="q" value="${filters.q}" placeholder="PO, supplier or product"></div>
+</div>
+<button class="ghost">Filter</button>${filtered ? html` <a href="/orders" style="margin-left:10px">Clear</a>` : ''}
+</form>
+
+<p class="muted small">${matching.length ? `Showing ${(page - 1) * PAGE_SIZE + 1}–${(page - 1) * PAGE_SIZE + shown.length} of ${matching.length}` : 'No orders match'}${filtered ? ` (of ${ledger.orders.length} in all)` : ''}</p>
+${shown.length
+  ? html`<div class="card scroll"><table>
+<thead><tr><th>PO</th><th>Supplier</th><th>Mkt</th><th>Products</th><th>Invoice</th><th class="n">RMB</th><th>Status</th><th></th></tr></thead>
+<tbody>${shown.map(({ o, r, stage }) => html`<tr><td><a href="/orders/${enc(o.po)}">${o.po}</a></td><td>${o.supplier}</td><td>${o.marketplace}</td>
+  <td class="small">${r.lines.map((l, i) => html`${i ? ', ' : ''}${productName(ledger, l.product)} ×${units(l.ordered)}`)}</td>
+  <td class="small">${r.invoice ? `${r.invoice.kind} ${r.invoice.date || ''}` : '—'}</td><td class="n">${rmb(r.totalRmb)}</td>
+  <td>${badge(STAGES[stage])}</td><td>${o.review === 'needs_review' ? badge(['To check', 'warn']) : ''}</td></tr>`)}</tbody></table></div>`
+  : ''}
+${pages > 1
+  ? html`<p class="pager">${page > 1 ? html`<a href="${link(page - 1)}">← Newer</a>` : html`<span class="muted">← Newer</span>`}
+  <span class="muted">Page ${page} of ${pages}</span>
+  ${page < pages ? html`<a href="${link(page + 1)}">Older →</a>` : html`<span class="muted">Older →</span>`}</p>`
+  : ''}`;
   return { title: 'Orders', body };
 }
 
