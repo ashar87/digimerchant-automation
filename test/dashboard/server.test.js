@@ -175,3 +175,30 @@ test('a UK payment from the USD balance needs the QB rate when QuickBooks isn’
   // A US order paid in USD needs no rate.
   assert.equal((await post('/payments', { ...fields, date: '2026-04-04', alloc_target: 'PO-003' })).status, 303);
 });
+
+test('a second invoice on a PO must say whether it replaces one or adds to them', async () => {
+  await post('/orders', { po: 'PO-010', supplier: 'Agent', marketplace: 'UK' });
+  const add = (fields) => post('/orders/PO-010/invoices', { version: orderVersion('PO-010'), date: '2026-05-01', line_kind: 'goods', line_product: 'A-UK', line_description: '', ...fields });
+  assert.equal((await add({ kind: 'proforma', line_qty: '100', line_rmb: '1000' })).status, 303);
+
+  const unsaid = await add({ kind: 'final', line_qty: '100', line_rmb: '1100' });
+  assert.equal(unsaid.status, 400);
+  assert.match(await unsaid.text(), /replaces one already on the PO, or is another invoice/);
+
+  const series = loadLedger(db).orders.find((o) => o.po === 'PO-010').invoices[0].series;
+  assert.equal((await add({ kind: 'final', series, line_qty: '100', line_rmb: '1100' })).status, 303);
+  assert.equal((await add({ kind: 'proforma', series: 'new', invoiceSupplier: 'Second factory', line_qty: '50', line_rmb: '500' })).status, 303);
+
+  const page = await (await get('/orders/PO-010')).text();
+  assert.match(page, /2 invoices on this PO, added together/);
+  assert.match(page, /Invoice 2: Second factory/);
+  assert.match(page, /replaced/);
+  assert.match(page, /1,600 RMB/); // 1,100 (final replaces 1,000) + 500
+});
+
+test('the Orders page shows the PO rules', async () => {
+  const page = await (await get('/orders')).text();
+  assert.match(page, /How POs work: the rules/);
+  assert.match(page, /One marketplace per PO/);
+  assert.match(page, /all in USD or all in RMB/);
+});

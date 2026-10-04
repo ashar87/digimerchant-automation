@@ -249,7 +249,9 @@ function migrate(db) {
   add('orders', 'review', "TEXT CHECK (review IN ('needs_review','reviewed') OR review IS NULL)"); // imported orders start as needs_review
   add('orders', 'source', 'TEXT'); // e.g. the sheet tab an imported order came from
   add('orders', 'import_notes', 'TEXT'); // JSON array shown when reviewing
-  add('shipments', 'sellerboard_manual', 'INTEGER'); // 1 = costs typed into Sellerboard by hand; the feed leaves it alone
+  add('shipments', 'sellerboard_manual', 'INTEGER');
+  add('invoices', 'series', 'TEXT'); // versions of one supplier invoice share a series; a PO can hold several
+  add('invoices', 'supplier', 'TEXT'); // when an invoice on the PO is from a different supplier // 1 = costs typed into Sellerboard by hand; the feed leaves it alone
 }
 
 const json = (v) => (v === undefined || v === null ? null : JSON.stringify(v));
@@ -274,7 +276,7 @@ export function saveLedger(db, ledger, { actor = 'import' } = {}) {
 
     const order = db.prepare(`INSERT INTO orders (po, supplier, marketplace, notes, review, source, import_notes) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(po) DO UPDATE SET supplier = excluded.supplier, marketplace = excluded.marketplace, notes = excluded.notes, review = excluded.review, source = excluded.source, import_notes = excluded.import_notes`);
     const clearInvoices = db.prepare('DELETE FROM invoices WHERE po = ?');
-    const invoice = db.prepare('INSERT INTO invoices (id, po, kind, date, supplier_ref, stated_total_rmb, file_path) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    const invoice = db.prepare('INSERT INTO invoices (id, po, kind, date, supplier_ref, stated_total_rmb, file_path, series, supplier) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
     const line = db.prepare('INSERT INTO invoice_lines (invoice_id, seq, kind, product, qty, rmb, description, category) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
     const clearWriteOffs = db.prepare('DELETE FROM write_offs WHERE po = ?');
     const writeOff = db.prepare('INSERT INTO write_offs (po, product, qty, reason, date) VALUES (?, ?, ?, ?, ?)');
@@ -282,7 +284,7 @@ export function saveLedger(db, ledger, { actor = 'import' } = {}) {
       order.run(o.po, o.supplier, o.marketplace, s(o.notes), s(o.review), s(o.source), json(o.importNotes));
       clearInvoices.run(o.po);
       for (const inv of o.invoices || []) {
-        invoice.run(inv.id, o.po, inv.kind, s(inv.date), s(inv.supplierRef), t(inv.statedTotalRmb), s(inv.filePath));
+        invoice.run(inv.id, o.po, inv.kind, s(inv.date), s(inv.supplierRef), t(inv.statedTotalRmb), s(inv.filePath), s(inv.series), s(inv.supplier));
         (inv.lines || []).forEach((l, i) => line.run(inv.id, i, l.kind, s(l.product), t(l.qty), t(l.rmb), s(l.description), s(l.category)));
       }
       clearWriteOffs.run(o.po);
@@ -351,6 +353,8 @@ export function loadLedger(db) {
           supplierRef: i.supplier_ref,
           statedTotalRmb: i.stated_total_rmb,
           filePath: i.file_path,
+          series: i.series,
+          supplier: i.supplier,
           lines: (linesByInvoice.get(i.id) || []).map((l) => strip({ kind: l.kind, product: l.product, qty: l.qty, rmb: l.rmb, description: l.description, category: l.category })),
         })
       ),

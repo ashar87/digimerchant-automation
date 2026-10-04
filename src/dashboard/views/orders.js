@@ -1,5 +1,6 @@
 import { html, raw, select, badge, rmb, units, pct, unitCost, money, BATCH_STATUS, PAID_STATUS, shipmentStatusLabel } from '../html.js';
 import { saveLedger, nextPo, auditTrail } from '../../landing/store.js';
+import { currentInvoices } from '../../landing/engine.js';
 import { text, number, date, required, rows, compact, uniqueId } from '../forms.js';
 import { HttpError } from '../errors.js';
 import { MARKETPLACES, productOptions, findOrder, productName, enc } from './common.js';
@@ -13,6 +14,29 @@ const LINE_KINDS = [
   { value: 'expense', label: 'Expense (not landing cost)' },
 ];
 const BLANK_LINES = 6;
+
+/**
+ * The supplier invoices on a PO, each with its versions (proforma, final,
+ * corrections) oldest first, and the one that counts.
+ */
+export function invoiceSeries(order) {
+  const byDate = (a, b) => String(a.date || '').localeCompare(String(b.date || ''));
+  const groups = new Map();
+  for (const inv of order.invoices || []) {
+    const key = inv.series || 'main';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(inv);
+  }
+  const current = new Set(currentInvoices(order).map((i) => i.id));
+  return [...groups.entries()]
+    .map(([key, versions]) => {
+      versions.sort(byDate);
+      const inUse = versions.find((v) => current.has(v.id));
+      const name = [inUse?.supplier, inUse?.supplierRef ? `no. ${inUse.supplierRef}` : null].filter(Boolean).join(' ') || `${inUse?.kind === 'final' ? 'final' : 'proforma'} ${inUse?.date || ''}`.trim();
+      return { key, versions, inUse, name };
+    })
+    .sort((a, b) => byDate(a.versions[0], b.versions[0]));
+}
 
 /* ---------------------------- list ---------------------------- */
 
@@ -34,6 +58,22 @@ export function orderStage(r, ledger) {
 }
 
 const PAGE_SIZE = 20;
+
+/** How POs work, shown on the Orders page. Each rule is something the system enforces or relies on. */
+export const PO_RULES = [
+  ['One PO is one purchase', 'Everything ordered together and paid together: a deposit and a balance. Create the PO before paying the deposit, and never reuse a PO number. The next one is suggested.'],
+  ['One marketplace per PO', 'UK, DE or US. UK and DE are costed in GBP, the US in USD. Ordering for two marketplaces at once means two POs; they can still be paid in one transfer.'],
+  ['A PO can hold several supplier invoices', 'From one supplier or several (e.g. Yongbo and Hongtai through Annie). When you add an invoice, say whether it replaces one already on the PO (a final after a proforma, or a corrected version) or is another invoice added to the others.'],
+  ['The latest version of each invoice counts', 'The final if there is one, otherwise the proforma. Replaced versions are kept for the record but don’t count. Each invoice’s fees, labour and rate differences stay with that invoice’s products.'],
+  ['Deposit and balance go to the same PO', 'Wise reference “PO-041 30%” for the deposit and “PO-041 balance” for the rest, covering every invoice on the PO. The supplier doesn’t need to print the PO; it’s linked when you upload the invoice.'],
+  ['One transfer can pay several POs', 'And courier bills, packing bags or samples. Record one row per PO (or bill), each with the amount its invoice asks for, all in USD or all in RMB. The transfer is split by those amounts. Suppliers are paid in USD or RMB; you can fund it from USD, GBP or EUR.'],
+  ['What a unit costs', 'The cash actually paid, never the invoice price: GBP actually paid, or USD/EUR × the QB rate on the payment date, for the UK and DE; USD sent for the US. Within a PO it’s shared by RMB, so a product carrying 60% of the RMB carries 60% of the cash. Wise fees, packing bags, samples and R&D are expenses, not landing cost.'],
+  ['When a PO is fully paid', 'When its payments add up to the RMB of all its current invoices, or a payment is marked balance or full. Until then the cost is projected from the deposit.'],
+  ['Put the PO in the shipment name', '“PO-041 UK” in Send to Amazon links the shipment by itself. A shipment carrying two POs: “PO-041 PO-043 UK”. If the same product comes from both, split the units on the shipment’s page.'],
+  ['Units a cost is divided by', 'Units ordered until every unit has shipped and every shipment has closed, then units Amazon received. Units that will never ship are written off on the order, and their cost moves to the units that arrived.'],
+  ['Courier bills attach by FBA ID, not PO', 'Each line of Annie’s bill names its shipment. Until the bill arrives, delivery is estimated from the last shipment of the same product.'],
+  ['Sellerboard', 'A batch goes to Sellerboard the day Amazon starts receiving it, dated that day, once its PO has been checked.'],
+];
 
 export function ordersPage(ctx) {
   const { ledger, result } = ctx.data;
@@ -77,6 +117,8 @@ export function ordersPage(ctx) {
   const body = html`
 <h1>Orders</h1>
 <p class="sub">One page per order, in place of a 30% tab and a 70% tab that have to find each other.</p>
+<details class="card" id="rules"><summary><b>How POs work: the rules</b></summary>
+<ol class="rules">${PO_RULES.map(([title, text]) => html`<li><b>${title}.</b> ${text}</li>`)}</ol></details>
 <form class="card" method="post" action="/orders">
 <h2 style="margin-top:0">New order</h2>
 <div class="grid">
@@ -105,7 +147,7 @@ ${shown.length
 <thead><tr><th>PO</th><th>Supplier</th><th>Mkt</th><th>Products</th><th>Invoice</th><th class="n">RMB</th><th>Status</th><th></th></tr></thead>
 <tbody>${shown.map(({ o, r, stage }) => html`<tr><td><a href="/orders/${enc(o.po)}">${o.po}</a></td><td>${o.supplier}</td><td>${o.marketplace}</td>
   <td class="small">${r.lines.map((l, i) => html`${i ? ', ' : ''}${productName(ledger, l.product)} ×${units(l.ordered)}`)}</td>
-  <td class="small">${r.invoice ? `${r.invoice.kind} ${r.invoice.date || ''}` : '—'}</td><td class="n">${rmb(r.totalRmb)}</td>
+  <td class="small">${r.invoices.length > 1 ? `${r.invoices.length} invoices` : r.invoice ? `${r.invoice.kind} ${r.invoice.date || ''}` : '—'}</td><td class="n">${rmb(r.totalRmb)}</td>
   <td>${badge(STAGES[stage])}</td><td>${o.review === 'needs_review' ? badge(['To check', 'warn']) : ''}</td></tr>`)}</tbody></table></div>`
   : ''}
 ${pages > 1
@@ -150,7 +192,7 @@ ${order.importNotes?.length
   ? html`<div class="notice"><b>Imported from ${order.source || 'the sheet'}.</b> Check against the sheet before marking it checked.<ul>${order.importNotes.map((n) => html`<li>${n}</li>`)}</ul></div>`
   : ''}
 
-<h2>Products${r.invoice ? html` <span class="muted small">· ${r.invoice.kind} invoice ${r.invoice.date || ''} · ${rmb(r.totalRmb)} RMB</span>` : ''}</h2>
+<h2>Products${r.invoices.length ? html` <span class="muted small">· ${r.invoices.length > 1 ? `${r.invoices.length} invoices` : `${r.invoice.kind} invoice ${r.invoice.date || ''}`} · ${rmb(r.totalRmb)} RMB</span>` : ''}</h2>
 <div class="card scroll"><table>
 <thead><tr><th>Product</th><th class="n">Units</th><th class="n">RMB share</th><th class="n">Line cost</th><th class="n">Product / unit</th><th>Divided by</th><th class="n">Landing / unit</th></tr></thead>
 <tbody>${r.lines.map((l) => {
@@ -185,9 +227,9 @@ ${batches.length
   ? html`<h2>Show working</h2>${batches.map((b) => html`<details><summary>${productName(ledger, b.product)} · ${b.shipment}</summary>${working(b)}</details>`)}`
   : ''}
 
-<h2>Invoices</h2>
-${(order.invoices || []).map((inv) => invoiceCard(order, inv, r.invoice?.id === inv.id, ledger))}
-<details${order.invoices?.length ? '' : raw(' open')}><summary>Add ${order.invoices?.length ? 'the final invoice or another version' : 'the proforma or invoice'}</summary>
+<h2>Invoices${r.invoices.length > 1 ? html` <span class="muted small">· ${r.invoices.length} invoices on this PO, added together</span>` : ''}</h2>
+${invoiceSeries(order).map((g, i, all) => html`${all.length > 1 ? html`<h3>Invoice ${i + 1}: ${g.name}</h3>` : ''}${g.versions.map((inv) => invoiceCard(order, inv, g.inUse?.id === inv.id, ledger))}`)}
+<details${order.invoices?.length ? '' : raw(' open')}><summary>${order.invoices?.length ? 'Add an invoice: a final or corrected version, or another invoice on this PO' : 'Add the proforma or invoice'}</summary>
 ${invoiceForm(ctx, order, null)}</details>
 
 <h2>Write-offs</h2>
@@ -213,7 +255,7 @@ export function history(ctx, entity, id) {
 }
 
 function invoiceCard(order, inv, inUse, ledger) {
-  return html`<div class="card"><b>${inv.kind === 'final' ? 'Final invoice' : 'Proforma'}</b> ${inv.date || ''} ${inv.supplierRef ? html`· supplier ref ${inv.supplierRef}` : ''}
+  return html`<div class="card"><b>${inv.kind === 'final' ? 'Final invoice' : 'Proforma'}</b> ${inv.date || ''} ${inv.supplier ? html`· ${inv.supplier}` : ''} ${inv.supplierRef ? html`· supplier ref ${inv.supplierRef}` : ''}
   ${inUse ? badge(['In use', 'ok']) : html`<span class="muted small">replaced</span>`}
   <div class="scroll"><table><thead><tr><th>Kind</th><th>Product</th><th class="n">Qty</th><th class="n">RMB</th><th>Description</th></tr></thead><tbody>
   ${(inv.lines || []).map((l) => html`<tr><td>${l.kind}</td><td>${l.product ? productName(ledger, l.product) : ''}</td><td class="n">${l.qty ? units(l.qty) : ''}</td><td class="n">${rmb(l.rmb)}</td><td class="small">${l.description || ''}${l.category ? ` (${l.category})` : ''}</td></tr>`)}
@@ -231,11 +273,19 @@ export function invoiceForm(ctx, order, inv, { action, submit, head = '', versio
   return html`<form class="card" method="post" action="${action || `/orders/${enc(order.po)}/invoices${inv?.id ? `/${enc(inv.id)}` : ''}`}">
 ${head}
 ${version === undefined ? versionField(ctx.data.ledger.orders.find((o) => o.po === order.po) || null) : version}
+${!inv?.id && order.invoices?.length
+  ? html`<div class="notice" style="margin-top:0"><label style="color:inherit"><b>This invoice…</b></label>${select('series', [
+      { value: '', label: '— choose —' },
+      ...invoiceSeries(order).map((g, i) => ({ value: g.key, label: `replaces invoice ${i + 1} (${g.name}): a final, or a corrected version` })),
+      { value: 'new', label: 'is another invoice on this PO, added to the others' },
+    ], '', { attrs: 'required' })}</div>`
+  : ''}
 <div class="grid">
   <div><label>Type</label>${select('kind', [{ value: 'proforma', label: 'Proforma' }, { value: 'final', label: 'Final invoice' }], inv?.kind || (order.invoices?.length ? 'final' : 'proforma'))}</div>
   <div><label>Date</label><input type="date" name="date" value="${inv?.date || ''}"></div>
   <div><label>Supplier’s invoice no.</label><input name="supplierRef" value="${inv?.supplierRef || ''}"></div>
   <div><label>Total on the invoice (RMB)</label><input name="statedTotalRmb" inputmode="decimal" value="${inv?.statedTotalRmb || ''}"></div>
+  <div><label>Supplier, if not ${order.supplier || 'the PO’s'}</label><input name="invoiceSupplier" value="${inv?.supplier || ''}"></div>
 </div>
 <div class="scroll"><table class="rows"><thead><tr><th>Kind</th><th>Product</th><th>Qty</th><th>RMB</th><th>Description / category</th></tr></thead><tbody>
 ${lines.map((l) => html`<tr><td>${select('line_kind', LINE_KINDS, l.kind || 'goods')}</td><td>${select('line_product', products, l.product, { blank: true })}</td>
@@ -284,7 +334,22 @@ export function invoiceFromForm(f, order, ledger, existingId = null, extra = {})
   const taken = new Set((order.invoices || []).filter((i) => i.id !== existingId).map((i) => i.id));
   const id = existingId || uniqueId(`${order.po}-${kind}-${invDate || 'undated'}`, taken);
   const previous = existingId ? (order.invoices || []).find((i) => i.id === existingId) : null;
-  const invoice = compact({ id, kind, date: invDate, supplierRef: text(f, 'supplierRef'), statedTotalRmb: number(f.get('statedTotalRmb'), 'Invoice total'), filePath: previous?.filePath, ...extra });
+
+  // Which supplier invoice this is a version of. Editing keeps it; a new one
+  // on a PO that already has invoices must say whether it replaces one or adds to them.
+  let series;
+  if (previous) series = previous.series;
+  else if (!(order.invoices || []).length) series = id;
+  else {
+    const choice = text(f, 'series');
+    const keys = new Set(invoiceSeries(order).map((g) => g.key));
+    if (!choice) throw new HttpError(400, 'Say whether this invoice replaces one already on the PO, or is another invoice added to them.');
+    if (choice === 'new') series = id;
+    else if (keys.has(choice)) series = choice === 'main' ? undefined : choice;
+    else throw new HttpError(400, 'That invoice is no longer on this PO. Reload and choose again.');
+  }
+
+  const invoice = compact({ id, kind, date: invDate, supplierRef: text(f, 'supplierRef'), supplier: text(f, 'invoiceSupplier'), statedTotalRmb: number(f.get('statedTotalRmb'), 'Invoice total'), filePath: previous?.filePath, series, ...extra });
   invoice.lines = lines;
   return invoice;
 }

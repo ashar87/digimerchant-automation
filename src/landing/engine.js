@@ -236,24 +236,40 @@ function spread(ownByKey, weightByKey, shared) {
 
 /* ---------------------------- orders ---------------------------- */
 
-function chooseInvoice(order) {
-  const invoices = order.invoices || [];
+/**
+ * The invoices that count. A PO can hold several supplier invoices; versions
+ * of the same one (proforma, then final, then a correction) share a series,
+ * and only the newest final, or failing that the newest proforma, of each
+ * series is used. Invoices without a series are all versions of one invoice.
+ */
+export function currentInvoices(order) {
   const byDate = (a, b) => String(a.date || '').localeCompare(String(b.date || ''));
-  const finals = invoices.filter((i) => i.kind === 'final').sort(byDate);
-  if (finals.length) return finals[finals.length - 1];
-  const proformas = invoices.filter((i) => i.kind !== 'final').sort(byDate);
-  return proformas[proformas.length - 1] || null;
+  const series = new Map();
+  for (const inv of order.invoices || []) {
+    const key = inv.series || 'main';
+    if (!series.has(key)) series.set(key, []);
+    series.get(key).push(inv);
+  }
+  const current = [];
+  for (const versions of series.values()) {
+    const finals = versions.filter((i) => i.kind === 'final').sort(byDate);
+    const proformas = versions.filter((i) => i.kind !== 'final').sort(byDate);
+    current.push(finals[finals.length - 1] || proformas[proformas.length - 1]);
+  }
+  return current.sort(byDate);
 }
 
 function costOrder(order, allocations, itemsByOrderProduct, issue) {
   const currency = costCurrency(order.marketplace);
-  const invoice = chooseInvoice(order);
+  const invoices = currentInvoices(order);
+  const latest = invoices[invoices.length - 1];
   const result = {
     po: order.po,
     supplier: order.supplier,
     marketplace: order.marketplace,
     currency,
-    invoice: invoice ? { id: invoice.id, kind: invoice.kind, date: invoice.date } : null,
+    invoice: latest ? { id: latest.id, kind: latest.kind, date: latest.date } : null,
+    invoices: invoices.map((i) => ({ id: i.id, kind: i.kind, date: i.date, series: i.series || 'main', supplier: i.supplier || null })),
     totalRmb: null,
     paidRmb: null,
     cash: null,
@@ -269,57 +285,83 @@ function costOrder(order, allocations, itemsByOrderProduct, issue) {
     })),
     lines: [],
   };
-  if (!invoice) {
+  if (!invoices.length) {
     issue('error', 'order_no_invoice', order.po, `${order.po} has no invoice.`);
     return result;
   }
+  const several = invoices.length > 1;
+  const label = (inv) => (several ? `the ${inv.kind} invoice ${inv.supplierRef || inv.date || inv.id}` : 'the invoice');
 
-  const lines = invoice.lines || [];
-  const goods = lines.filter((l) => l.kind === 'goods');
-  if (!goods.length) {
-    issue('error', 'invoice_no_goods', order.po, `The ${invoice.kind} invoice on ${order.po} has no product lines.`);
+  // Every product across the current invoices, merged.
+  const goodsByProduct = new Map();
+  for (const inv of invoices) {
+    for (const l of (inv.lines || []).filter((x) => x.kind === 'goods')) {
+      const g = goodsByProduct.get(l.product) || { qty: ZERO, rmb: ZERO, rmbKnown: true };
+      g.qty = g.qty.plus(D(l.qty) ?? ZERO);
+      if (D(l.rmb) === null) g.rmbKnown = false;
+      else g.rmb = g.rmb.plus(D(l.rmb));
+      goodsByProduct.set(l.product, g);
+    }
+  }
+  if (!goodsByProduct.size) {
+    issue('error', 'invoice_no_goods', order.po, `${order.po}: ${label(latest)} has no product lines.`);
     return result;
   }
 
-  // RMB: the lines are the truth; a stated total that disagrees is flagged, not used.
-  const allLinesHaveRmb = lines.every((l) => D(l.rmb) !== null);
-  const linesTotal = allLinesHaveRmb ? sum(lines.map((l) => D(l.rmb))) : null;
-  const stated = D(invoice.statedTotalRmb);
-  result.totalRmb = linesTotal ?? stated;
-  if (linesTotal !== null && stated !== null && linesTotal.minus(stated).abs().gt(RMB_TOLERANCE)) {
-    issue('warning', 'invoice_total_mismatch', order.po, `${order.po}: the invoice says ${fmtRmb(stated)} RMB but its lines add up to ${fmtRmb(linesTotal)} RMB.`);
-  }
-
-  // Each product's share of the invoice: its goods, its own labour, and its
-  // share (by goods RMB) of fees, shared labour and adjustments.
-  const goodsByProduct = new Map();
-  for (const l of goods) {
-    const g = goodsByProduct.get(l.product) || { qty: ZERO, rmb: ZERO, rmbKnown: true };
-    g.qty = g.qty.plus(D(l.qty) ?? ZERO);
-    if (D(l.rmb) === null) g.rmbKnown = false;
-    else g.rmb = g.rmb.plus(D(l.rmb));
-    goodsByProduct.set(l.product, g);
-  }
-
-  let fractions; // product -> Decimal share of the invoice's total RMB
-  if (allLinesHaveRmb && result.totalRmb.gt(0)) {
-    const own = new Map([...goodsByProduct].map(([p, g]) => [p, g.rmb]));
-    for (const l of lines) {
-      if (l.kind === 'labour' && l.product) {
-        if (!own.has(l.product)) issue('warning', 'labour_unknown_product', order.po, `${order.po}: labour line for ${l.product}, which isn't a product on the invoice.`);
-        else own.set(l.product, own.get(l.product).plus(D(l.rmb)));
-      }
+  // Each invoice is allocated on its own: its products get their goods, their
+  // own labour, and a share (by goods RMB) of that invoice's fees, shared labour
+  // and adjustments. Then the invoices are added together. RMB comes from the
+  // lines; a stated total that disagrees is flagged, not used.
+  const allocated = new Map(); // product -> RMB carried, across invoices
+  let total = ZERO;
+  let wholeOrder = false; // one invoice, one product, no RMB: it carries everything
+  for (const inv of invoices) {
+    const lines = inv.lines || [];
+    const goods = lines.filter((l) => l.kind === 'goods');
+    const allLinesHaveRmb = lines.length > 0 && lines.every((l) => D(l.rmb) !== null);
+    const linesTotal = allLinesHaveRmb ? sum(lines.map((l) => D(l.rmb))) : null;
+    const stated = D(inv.statedTotalRmb);
+    if (linesTotal !== null && stated !== null && linesTotal.minus(stated).abs().gt(RMB_TOLERANCE)) {
+      issue('warning', 'invoice_total_mismatch', order.po, `${order.po}: ${label(inv)} says ${fmtRmb(stated)} RMB but its lines add up to ${fmtRmb(linesTotal)} RMB.`);
     }
-    const shared = sum(lines.filter((l) => ['fee', 'adjustment'].includes(l.kind) || (l.kind === 'labour' && !l.product)).map((l) => D(l.rmb)));
-    const weights = new Map([...goodsByProduct].map(([p, g]) => [p, g.rmb]));
-    const allocated = spread(own, weights, shared);
-    fractions = new Map([...allocated].map(([p, rmb]) => [p, { rmb, fraction: rmb.div(result.totalRmb) }]));
-  } else if (goodsByProduct.size === 1 && lines.every((l) => l.kind === 'goods' || l.kind === 'fee' || l.kind === 'adjustment' || l.kind === 'labour')) {
-    // One product and nothing excluded: it carries the whole invoice.
-    const [p] = goodsByProduct.keys();
-    fractions = new Map([[p, { rmb: result.totalRmb, fraction: ONE }]]);
+    const invTotal = linesTotal ?? stated;
+    const products = [...new Set(goods.map((l) => l.product))];
+    const onlyCostLines = lines.every((l) => l.kind !== 'expense');
+
+    if (allLinesHaveRmb && invTotal.gt(0)) {
+      const own = new Map(products.map((p) => [p, sum(goods.filter((l) => l.product === p).map((l) => D(l.rmb)))]));
+      const weights = new Map(own);
+      for (const l of lines) {
+        if (l.kind === 'labour' && l.product) {
+          if (!own.has(l.product)) issue('warning', 'labour_unknown_product', order.po, `${order.po}: labour line for ${l.product}, which isn't a product on ${label(inv)}.`);
+          else own.set(l.product, own.get(l.product).plus(D(l.rmb)));
+        }
+      }
+      const shared = sum(lines.filter((l) => ['fee', 'adjustment'].includes(l.kind) || (l.kind === 'labour' && !l.product)).map((l) => D(l.rmb)));
+      for (const [p, rmb] of spread(own, weights, shared)) allocated.set(p, (allocated.get(p) || ZERO).plus(rmb));
+      total = total.plus(invTotal);
+    } else if (products.length === 1 && onlyCostLines && (invTotal !== null || !several)) {
+      // One product and nothing excluded: it carries the whole invoice.
+      if (invTotal === null) wholeOrder = true;
+      else {
+        allocated.set(products[0], (allocated.get(products[0]) || ZERO).plus(invTotal));
+        total = total.plus(invTotal);
+      }
+    } else {
+      issue('error', 'invoice_rmb_missing', order.po, `${order.po}: ${label(inv)} has several lines but not all have an RMB amount, so they can't be split.`);
+      allocated.clear();
+      total = null;
+      break;
+    }
+  }
+  result.totalRmb = wholeOrder ? null : total;
+
+  let fractions; // product -> Decimal share of the order's total RMB
+  if (wholeOrder) {
+    fractions = new Map([[[...goodsByProduct.keys()][0], { rmb: null, fraction: ONE }]]);
+  } else if (total !== null && total.gt(0)) {
+    fractions = new Map([...allocated].map(([p, rmb]) => [p, { rmb, fraction: rmb.div(total) }]));
   } else {
-    issue('error', 'invoice_rmb_missing', order.po, `${order.po}: the invoice has several lines but not all have an RMB amount, so they can't be split.`);
     fractions = new Map();
   }
 

@@ -284,3 +284,37 @@ test('a one-shipment bill that states only USD carries all of it to that shipmen
   assert.equal(fmt4(r.shipments[0].delivery.perUnit), '0.4000');
   assert.ok(!codes(r).includes('bill_rmb_missing'));
 });
+
+test('a PO with two supplier invoices adds them together, each from its latest version', () => {
+  const o = {
+    po: 'PO-1', supplier: 'Agent', marketplace: 'UK',
+    invoices: [
+      { id: 'a-pro', series: 'a', kind: 'proforma', date: '2026-01-01', lines: [goods('A-UK', 100, 900)] },
+      { id: 'a-fin', series: 'a', kind: 'final', date: '2026-01-20', lines: [goods('A-UK', 100, 1000), { kind: 'fee', rmb: 100 }] },
+      { id: 'b-pro', series: 'b', kind: 'proforma', date: '2026-01-02', supplier: 'Other factory', lines: [goods('B-UK', 50, 1000)] },
+    ],
+  };
+  const r = run({
+    orders: [o],
+    payments: [{ id: 'P1', date: '2026-01-25', gbp: 210, allocations: [{ type: 'order', target: 'PO-1', part: 'full' }] }],
+  });
+  const order = r.orders[0];
+  assert.deepEqual(order.invoices.map((i) => i.id), ['b-pro', 'a-fin']);
+  assert.equal(order.totalRmb.toString(), '2100');
+  // Invoice A's fee stays with A: 1,100 of 2,100 RMB.
+  assert.equal(fmt4(line(r, 'PO-1', 'A-UK').cost), '110.0000');
+  assert.equal(fmt4(line(r, 'PO-1', 'B-UK').unitCost), '2.0000'); // 100 / 50
+});
+
+test('the same product on two invoices of one PO is merged', () => {
+  const r = run({
+    orders: [{ po: 'PO-1', supplier: 'S', marketplace: 'UK', invoices: [
+      { id: 'x', series: 'x', kind: 'final', date: '2026-01-01', lines: [goods('A-UK', 100, 1000)] },
+      { id: 'y', series: 'y', kind: 'final', date: '2026-01-02', lines: [goods('A-UK', 300, 3000)] },
+    ] }],
+    payments: [{ id: 'P1', date: '2026-01-05', gbp: 400, allocations: [{ type: 'order', target: 'PO-1', part: 'full' }] }],
+  });
+  const l = line(r, 'PO-1', 'A-UK');
+  assert.equal(l.ordered.toString(), '400');
+  assert.equal(fmt4(l.unitCost), '1.0000');
+});
