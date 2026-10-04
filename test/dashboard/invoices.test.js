@@ -84,3 +84,10 @@ test('“Get it from QuickBooks” fills in the rate on a payment that needs one
   assert.equal(r.status, 303);
   assert.equal(loadLedger(db).payments.find((p) => p.id === 'P-NEEDS-RATE').qbRate, '0.79');
 });
+
+test('with QuickBooks connected, a payment can be saved without the rate; it shows as needing one', async () => {
+  const body = formOf({ date: '2026-04-05', usd: '60', alloc_type: 'order', alloc_target: 'PO-030', alloc_part: 'balance', alloc_usd: '60', alloc_rmb: '', alloc_description: '' });
+  const r = await post('/payments', body, { 'Content-Type': 'application/x-www-form-urlencoded' });
+  assert.equal(r.status, 303);
+  assert.match(await page('/payments/P-2026-04-05'), /needs a QB rate/);
+});

@@ -77,14 +77,14 @@ ${p?.id ? versionField(p) : ''}
 </div>
 <p class="muted small">UK and DE are costed in GBP: the GBP actually paid if you paid in GBP, otherwise USD or EUR × the QB rate on this date. The US is costed in the USD sent.</p>
 <h3>What it paid for</h3>
-<div class="scroll"><table class="rows"><thead><tr><th>Type</th><th>PO / bill / category</th><th>Part</th><th>USD on the invoice</th><th>RMB on the invoice</th><th>Note</th></tr></thead><tbody>
+<div class="scroll"><table class="rows"><thead><tr><th>Type</th><th>PO / bill / category</th><th>Part</th><th>Invoice amount, USD</th><th>Invoice amount, RMB</th><th>Note</th></tr></thead><tbody>
 ${allocations.map((a) => html`<tr><td>${select('alloc_type', TYPES, a.type || 'order')}</td>
 <td><input name="alloc_target" list="targets" value="${a.target || ''}"></td><td>${select('alloc_part', PARTS, a.part || '')}</td>
 <td><input name="alloc_usd" inputmode="decimal" value="${a.usd || ''}"></td><td><input name="alloc_rmb" inputmode="decimal" value="${a.rmb || ''}"></td>
 <td><input name="alloc_description" value="${a.description || ''}"></td></tr>`)}
 </tbody></table></div>
 <datalist id="targets">${targets.map((t) => html`<option value="${t}">`)}</datalist>
-<p class="muted small">When one transfer pays several invoices, give each its USD so the transfer can be split. Never link on amount alone.</p>
+<p class="muted small">The amount each invoice asks for, not what you sent. When one transfer pays several invoices it’s split by these, so fill in every row: all in USD, or all in RMB if paid straight to RMB. Adding the RMB as well lets an order be confirmed fully paid.</p>
 <label><input type="text" name="notes" value="${p?.notes || ''}" placeholder="Notes" style="width:100%"></label>
 <p><button>${p?.id ? 'Save payment' : 'Record payment'}</button></p>
 </form>
@@ -109,6 +109,12 @@ export function savePayment(ctx) {
     return compact({ type: a.type, target: a.target, part: a.part || undefined, usd: number(a.usd, `${where} USD`), rmb: number(a.rmb, `${where} RMB`), description: a.description });
   });
   if (!allocations.length) throw new HttpError(400, 'Say what the payment paid for');
+  // One transfer, several invoices: it's split by what each invoice asks for, so
+  // every row needs that amount, all in the same currency. Suppliers are paid in
+  // USD or RMB, whichever account the transfer was funded from.
+  if (allocations.length > 1 && !allocations.every((a) => a.usd) && !allocations.every((a) => a.rmb)) {
+    throw new HttpError(400, `This transfer pays ${allocations.length} things, so it’s split between them by what each invoice asks for. Enter that amount on every row: all in USD, or all in RMB if it was paid straight to RMB.`);
+  }
 
   const payment = compact({
     id: existingId || uniqueId(`P-${d}`, new Set(ledger.payments.map((p) => p.id))),
@@ -124,6 +130,11 @@ export function savePayment(ctx) {
   });
   if (!payment.usd && !payment.gbp && !payment.eur) throw new HttpError(400, 'Enter the amount sent (USD, GBP or EUR)');
   payment.allocations = allocations;
+  // UK and DE are costed in GBP: from the USD or EUR balance that needs the QB rate,
+  // unless QuickBooks is connected to look it up (until then it shows as pending).
+  if (!ctx.qbo && paymentsNeedingRate({ ...ledger, payments: [payment] }).length) {
+    throw new HttpError(400, `This pays a UK or DE order from ${payment.eur ? 'EUR' : 'USD'} with no GBP amount, so it needs the QB rate for ${d} (GBP per ${payment.eur ? 'EUR' : 'USD'}).`);
+  }
   const before = computeLandingCosts(ledger);
   saveLedger(ctx.db, { payments: [payment] }, { actor: ctx.actor });
   const wise = text(f, 'wise');
@@ -131,7 +142,9 @@ export function savePayment(ctx) {
   const bills = allocations.filter((a) => a.type === 'bill').map((a) => a.target);
   if (bills.length) queueBillCards(ctx.db, bills, before);
   const firstOrder = allocations.find((a) => a.type === 'order');
-  return { redirect: `${firstOrder ? `/orders/${enc(firstOrder.target)}` : '/payments'}?ok=${enc(`Payment ${payment.id} saved.`)}` };
+  const noRmb = allocations.filter((a) => a.type === 'order' && !a.rmb).map((a) => a.target);
+  const tip = noRmb.length ? ` Tip: add the RMB the invoice states for ${noRmb.join(', ')}, so the order can be confirmed fully paid.` : '';
+  return { redirect: `${firstOrder ? `/orders/${enc(firstOrder.target)}` : '/payments'}?ok=${enc(`Payment ${payment.id} saved.${tip}`)}` };
 }
 
 export function deletePayment(ctx) {

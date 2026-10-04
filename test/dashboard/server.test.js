@@ -149,3 +149,29 @@ test('a stale delete is refused too, and a form with no version is refused', asy
   assert.equal((await post('/payments/P-1', fields)).status, 400);
   assert.equal(payment().gbp, '210');
 });
+
+test('a payment covering several invoices needs every invoice amount, all USD or all RMB', async () => {
+  const base = { date: '2026-04-01', gbp: '300', alloc_part: ['deposit', 'deposit'], alloc_description: ['', ''] };
+  const missing = await post('/payments', { ...base, alloc_type: ['order', 'order'], alloc_target: ['PO-001', 'PO-002'], alloc_usd: ['250', ''], alloc_rmb: ['', ''] });
+  assert.equal(missing.status, 400);
+  assert.match(await missing.text(), /pays 2 things.*all in USD, or all in RMB/s);
+
+  const mixed = await post('/payments', { ...base, alloc_type: ['order', 'order'], alloc_target: ['PO-001', 'PO-002'], alloc_usd: ['250', ''], alloc_rmb: ['', '1800'] });
+  assert.equal(mixed.status, 400);
+
+  const rmb = await post('/payments', { ...base, alloc_type: ['order', 'order'], alloc_target: ['PO-001', 'PO-002'], alloc_usd: ['', ''], alloc_rmb: ['1200', '1800'] });
+  assert.equal(rmb.status, 303);
+  const usd = await post('/payments', { ...base, date: '2026-04-02', alloc_type: ['order', 'expense'], alloc_target: ['PO-001', 'Advertising'], alloc_usd: ['250', '150'], alloc_rmb: ['', ''] });
+  assert.equal(usd.status, 303);
+  assert.match(decodeURIComponent(usd.headers.get('location')), /Tip: add the RMB the invoice states for PO-001/);
+});
+
+test('a UK payment from the USD balance needs the QB rate when QuickBooks isn’t connected', async () => {
+  const fields = { date: '2026-04-03', usd: '100', alloc_type: 'order', alloc_target: 'PO-001', alloc_part: 'balance', alloc_usd: '100', alloc_rmb: '', alloc_description: '' };
+  const r = await post('/payments', fields);
+  assert.equal(r.status, 400);
+  assert.match(await r.text(), /needs the QB rate for 2026-04-03 \(GBP per USD\)/);
+  assert.equal((await post('/payments', { ...fields, qbRate: '0.75' })).status, 303);
+  // A US order paid in USD needs no rate.
+  assert.equal((await post('/payments', { ...fields, date: '2026-04-04', alloc_target: 'PO-003' })).status, 303);
+});
