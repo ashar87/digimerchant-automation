@@ -8,7 +8,7 @@ import { today } from '../util/time.js';
  * Sends one buffered conversation to the model and returns the task candidates.
  * Returns [] on any failure — a provider outage must never crash the listener.
  */
-export async function extractTasks({ chatId, chatLabel, chatContext, isGroup, messages, people, provider, unknownAssignee }) {
+export async function extractTasks({ chatId, chatLabel, chatContext, isGroup, messages, people, provider, unknownAssignee, assignAllTo = null }) {
   const model = getProvider(provider);
   const todayLocal = today();
   const { text, attachments } = userPrompt({ chatLabel, chatContext, isGroup, messages, today: todayLocal });
@@ -34,7 +34,8 @@ export async function extractTasks({ chatId, chatLabel, chatContext, isGroup, me
         chatId,
         chatLabel,
         title: String(t.title).trim(),
-        assignee: normaliseAssignee(t.assignee, people, unknownAssignee),
+        // A chat can send every task to one person (`assignAllTo`), whoever the message names.
+        assignee: assignAllTo || normaliseAssignee(t.assignee, people, unknownAssignee),
         dueDate: validDate(t.dueDate),
         priority: ['low', 'medium', 'high'].includes(t.priority) ? t.priority : 'medium',
         notes: t.notes || null,
