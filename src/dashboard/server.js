@@ -11,6 +11,7 @@ import http from 'node:http';
 import { pathToFileURL } from 'node:url';
 import { config } from '../config.js';
 import { openLandingDb, loadLedger } from '../landing/store.js';
+import { seedTaskRefs, whatsappRefCounter } from '../tasks/board.js';
 import { createSpApi, spApiConfigured } from '../amazon/spapi.js';
 import { createSheetsWriter, sheetsConfigured } from '../google/sheets.js';
 import { geminiInvoiceReader } from '../invoices/model.js';
@@ -188,6 +189,8 @@ if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   const invoiceReader = config.geminiApiKey ? geminiInvoiceReader(await import('../providers/gemini.js')) : null;
   const wise = wiseConfigured(config.wise) ? createWise(config.wise) : null;
   const qbo = qboConfigured(config.qbo) ? qboFromConfig(db, config.qbo) : null;
+  // Board refs carry on from the WhatsApp listener's, so A-numbers never repeat.
+  seedTaskRefs(db, whatsappRefCounter(config.dbPath));
   createDashboard({ db, spapi, sheets, invoiceReader, wise, qbo }).listen(port, '127.0.0.1', () => {
     console.log(`Landing-cost dashboard: http://127.0.0.1:${port}  (database ${config.landingDbPath})`);
   });

@@ -206,6 +206,16 @@ dl.working{display:grid;grid-template-columns:max-content 1fr;gap:4px 16px;margi
 dl.working dt{color:var(--muted)}dl.working dd{margin:0;font-variant-numeric:tabular-nums}
 .rules{margin:10px 0 0;padding-left:22px}.rules li{margin:0 0 8px}
 .pager{display:flex;gap:18px;align-items:center}
+.board{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;align-items:start}
+.board .col h2{margin:8px 0}
+ul.tasks{list-style:none;margin:0;padding:0}
+.task{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:0 0 8px}
+.task .t-title{font-weight:600}.task .t-meta{margin-top:4px}.task .t-move{display:flex;gap:8px;margin-top:8px}
+nav.seg{display:none}
+.filters{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:flex-end}
+label.check{display:flex;align-items:center;gap:6px}
+a.danger-link{color:var(--bad)}
+blockquote{margin:6px 0 0;padding-left:10px;border-left:3px solid var(--line)}
 .notice{background:var(--wait-bg);color:var(--wait);padding:8px 12px;border-radius:8px;margin:10px 0}
 @media (max-width:760px){
   body{font-size:16px}
@@ -239,6 +249,18 @@ dl.working dt{color:var(--muted)}dl.working dd{margin:0;font-variant-numeric:tab
   table.stack:not(.rows) td.key{flex:0 0 auto;width:auto;max-width:55%;text-align:right;order:-1;font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
   table.stack:not(.rows) td.key::before{content:none}
   .card.scroll{padding:0;border:0;background:transparent}
+  /* Task board: one column at a time, picked with the segmented control. */
+  .board{grid-template-columns:1fr}
+  .board .col:not(.sel){display:none}
+  .board .col h2{display:none}
+  nav.seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;margin:10px 0}
+  nav.seg a{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;min-height:44px;color:var(--ink);text-decoration:none;background:var(--card)}
+  nav.seg a+a{border-left:1px solid var(--line)}
+  nav.seg a.on{background:var(--accent);color:var(--btn-ink);font-weight:600}
+  nav.seg a.on .muted{color:inherit}
+  .task .t-move button{flex:1}
+  .filters>div{flex:1 1 140px}
+  .grid input,.grid select{width:100%}
   /* Form grids (invoice lines, payment rows): each row becomes a stack of labelled fields. */
   table.rows.stack td{display:block;text-align:left}
   table.rows.stack td::before{display:block;margin-bottom:2px}

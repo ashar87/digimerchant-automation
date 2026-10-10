@@ -218,6 +218,25 @@ CREATE TABLE IF NOT EXISTS settings (
   value TEXT
 );
 
+-- The task board (src/tasks/board.js). Refs share the WhatsApp A-series.
+CREATE TABLE IF NOT EXISTS tasks (
+  ref          TEXT PRIMARY KEY,
+  title        TEXT NOT NULL,
+  status       TEXT NOT NULL CHECK (status IN ('new','in_progress','done')),
+  assignee     TEXT CHECK (assignee IN ('Ashar','Atif') OR assignee IS NULL),
+  due          TEXT,
+  priority     TEXT CHECK (priority IN ('high','medium','low') OR priority IS NULL),
+  po           TEXT,
+  notes        TEXT,
+  source       TEXT NOT NULL DEFAULT 'manual',
+  source_chat  TEXT,
+  source_quote TEXT,
+  created_at   TEXT NOT NULL,
+  created_by   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL,
+  done_at      TEXT
+);
+
 -- Both owners edit; every change records who and when.
 CREATE TABLE IF NOT EXISTS audit_log (
   id        INTEGER PRIMARY KEY,

@@ -7,6 +7,7 @@ import { unmappedSkus, lastSync } from './amazon.js';
 import { pendingDrafts } from '../../invoices/intake.js';
 import { rateLookups } from '../../quickbooks/rates.js';
 import { unrecordedTransfers } from '../../wise/import.js';
+import { inboxTaskItems } from './tasks.js';
 
 /**
  * Everything that needs a person, most urgent first. Things that only need
@@ -22,6 +23,7 @@ export function inboxItems(ctx) {
   for (const i of result.issues.filter((x) => x.severity === 'warning')) {
     items.push({ tone: 'warning', title: i.message, href: refHref(ledger, i.ref), count: true });
   }
+  items.push(...inboxTaskItems(ctx.db));
   const sync = lastSync(ctx.db);
   if (sync && !sync.ok) items.push({ tone: 'error', title: `The last Amazon check failed: ${(sync.summary.errors || []).join('; ')}`, href: '/shipments', count: true });
   for (const card of awaitingReply(ctx.db)) {

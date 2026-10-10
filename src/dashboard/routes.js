@@ -1,4 +1,3 @@
-import { html } from './html.js';
 import { inboxPage } from './views/inbox.js';
 import { ordersPage, createOrder, orderPage, editInvoicePage, saveInvoice, deleteInvoice, markReviewed, addWriteOff } from './views/orders.js';
 import { paymentsPage, paymentForm, savePayment, deletePayment } from './views/payments.js';
@@ -11,6 +10,7 @@ import { anniePage } from './views/annie.js';
 import { settingsPage, saveSettings } from './views/settings.js';
 import { runAmazonSync, replyToCard, messagesPage } from './views/amazon.js';
 import { wisePage, fetchWise, ignoreTransfer, lookupRate } from './views/wise.js';
+import { boardPage, newTaskPage, taskPage, saveTaskForm, moveTask, deleteTaskPage, deleteTaskForm } from './views/tasks.js';
 import { invoicesPage, uploadInvoice, draftPage, saveDraft, discardDraft, draftFile } from './views/invoices.js';
 
 const SEG = '([^/]+)';
@@ -18,8 +18,14 @@ const r = (method, path, handler) => ({ method, pattern: new RegExp(`^${path.rep
 
 export const routes = [
   r('GET', '/', inboxPage),
-  // Placeholder until the task board is built (next step).
-  r('GET', '/tasks', () => ({ title: 'Tasks', body: html`<h1>Tasks</h1><p class="sub">The task board is being built: New, In Progress and Done, with tasks from WhatsApp and ones you add yourself.</p>` })),
+  r('GET', '/tasks', boardPage),
+  r('GET', '/tasks/new', newTaskPage),
+  r('POST', '/tasks', saveTaskForm),
+  r('POST', '/tasks/:seg/move', moveTask),
+  r('GET', '/tasks/:seg/delete', deleteTaskPage),
+  r('POST', '/tasks/:seg/delete', deleteTaskForm),
+  r('GET', '/tasks/:seg', taskPage),
+  r('POST', '/tasks/:seg', saveTaskForm),
 
   r('GET', '/orders', ordersPage),
   r('POST', '/orders', createOrder),

@@ -1,4 +1,5 @@
 import { html, raw, select, badge, rmb, units, pct, unitCost, money, BATCH_STATUS, PAID_STATUS, shipmentStatusLabel } from '../html.js';
+import { poTasksSection } from './tasks.js';
 import { saveLedger, nextPo, auditTrail } from '../../landing/store.js';
 import { currentInvoices } from '../../landing/engine.js';
 import { text, number, date, required, rows, compact, uniqueId } from '../forms.js';
@@ -226,6 +227,8 @@ ${shipments.length
 ${batches.length
   ? html`<h2>Show working</h2>${batches.map((b) => html`<details><summary>${productName(ledger, b.product)} · ${b.shipment}</summary>${working(b)}</details>`)}`
   : ''}
+
+${poTasksSection(ctx, order.po)}
 
 <h2>Invoices${r.invoices.length > 1 ? html` <span class="muted small">· ${r.invoices.length} invoices on this PO, added together</span>` : ''}</h2>
 ${invoiceSeries(order).map((g, i, all) => html`${all.length > 1 ? html`<h3>Invoice ${i + 1}: ${g.name}</h3>` : ''}${g.versions.map((inv) => invoiceCard(order, inv, g.inUse?.id === inv.id, ledger))}`)}
