@@ -12,6 +12,8 @@ import { D, sum } from '../landing/money.js';
 import { enqueue } from '../notify/outbox.js';
 import { shipmentClosedCard, linkRequestCard, shortfallCard } from '../notify/cards.js';
 import { queueCostChanges } from '../notify/costs.js';
+import { MARKETPLACES } from './spapi.js';
+import { marketplaceForWarehouse } from './warehouses.js';
 
 const DONE = new Set(['CLOSED', 'CANCELLED', 'DELETED']);
 const RECEIVING = new Set(['RECEIVING', 'CLOSED']);
@@ -34,17 +36,31 @@ export async function syncAmazon({ db, client, now = new Date(), actor = 'amazon
   const events = [];
   const unmappedByShipment = new Map();
 
-  for (const marketplace of client.marketplaces()) {
+  // One query per region: Amazon answers a UK query with the DE shipments too
+  // (and the other way round), so asking per marketplace saw each one twice.
+  const regions = new Map();
+  for (const m of client.marketplaces()) {
+    const region = MARKETPLACES[m]?.region || m;
+    regions.set(region, [...(regions.get(region) || []), m]);
+  }
+
+  for (const [region, markets] of regions) {
     try {
-      const open = ledger.shipments.filter((s) => s.marketplace === marketplace && !DONE.has(s.status)).map((s) => s.id);
+      const open = ledger.shipments.filter((s) => markets.includes(s.marketplace) && !DONE.has(s.status)).map((s) => s.id);
       const found = new Map();
-      if (open.length) for (const s of await client.getShipments(marketplace, { ids: open })) found.set(s.ShipmentId, s);
-      for (const s of await client.getShipments(marketplace, { updatedAfter: since.toISOString(), updatedBefore: until.toISOString() })) found.set(s.ShipmentId, s);
+      if (open.length) for (const s of await client.getShipments(markets[0], { ids: open })) found.set(s.ShipmentId, s);
+      for (const s of await client.getShipments(markets[0], { updatedAfter: since.toISOString(), updatedBefore: until.toISOString() })) found.set(s.ShipmentId, s);
 
       for (const amazon of found.values()) {
         report.checked++;
         const existing = ledger.shipments.find((x) => x.id === amazon.ShipmentId);
-        if (existing && existing.marketplace !== marketplace) continue;
+        const marketplace = existing?.marketplace || (markets.length === 1 ? markets[0] : marketplaceForWarehouse(amazon.DestinationFulfillmentCenterId, markets));
+        if (!marketplace) {
+          // Counted as a failed run, so the next one looks again (and the Inbox says so) until the code is added.
+          report.errors.push(`${amazon.ShipmentId} goes to Amazon warehouse ${amazon.DestinationFulfillmentCenterId || '(none given)'}, which isn't in src/amazon/warehouses.js, so it's unclear whether it's ${markets.join(' or ')}. Add the code there.`);
+          continue;
+        }
+        if (!markets.includes(marketplace)) continue;
         if (existing && DONE.has(existing.status) && existing.status === amazon.ShipmentStatus) continue;
         const items = await client.getShipmentItems(marketplace, amazon.ShipmentId);
         const merged = mergeShipment({ existing, amazon, items, marketplace, ledger, today });
@@ -56,7 +72,7 @@ export async function syncAmazon({ db, client, now = new Date(), actor = 'amazon
         report.unmapped.push(...merged.unmapped.map((u) => `${merged.shipment.id} ${u.sku}`));
       }
     } catch (err) {
-      report.errors.push(`${marketplace}: ${err.message}`);
+      report.errors.push(`${markets.join('/')}: ${err.message}`);
     }
   }
 
@@ -71,7 +87,7 @@ export async function syncAmazon({ db, client, now = new Date(), actor = 'amazon
   saveUnmapped();
 
   const after = computeLandingCosts(loadLedger(db));
-  report.cards += queueEventCards(db, events, before, after, loadLedger(db));
+  report.cards += queueEventCards(db, events, before, after, loadLedger(db), unmappedByShipment);
   // Shipments that just closed already explain their cost change on the closed card.
   const explained = new Set(events.filter((e) => e.type === 'closed').map((e) => e.shipment));
   report.cards += queueCostChanges(db, after, { skipShipments: explained, reason: 'After the Amazon sync.' });
@@ -169,7 +185,7 @@ export function mergeShipment({ existing, amazon, items, marketplace, ledger, to
 
 /* ---------------------------- cards ---------------------------- */
 
-function queueEventCards(db, events, before, after, ledger) {
+function queueEventCards(db, events, before, after, ledger, unmappedByShipment = new Map()) {
   let queued = 0;
   const q = (card) => {
     if (enqueue(db, card)) queued++;
@@ -189,6 +205,9 @@ function queueEventCards(db, events, before, after, ledger) {
         });
       q({ kind: 'shipment_closed', dedupeKey: `closed:${shipment.id}`, text: shipmentClosedCard({ shipment: shipment.id, marketplace: shipment.marketplace, lines }) });
 
+      // Amazon's counts for SKUs not yet in the product list can't be matched to our lines,
+      // so a "short" line there is usually just unmatched; wait until the SKUs are added.
+      if (unmappedByShipment.get(shipment.id)?.length) continue;
       for (const b of after.batches.filter((x) => x.shipment === shipment.id && x.received !== null)) {
         const short = b.shipped.minus(b.received);
         if (short.gte(SHORTFALL_UNITS) && short.div(b.shipped).gte(SHORTFALL_SHARE)) {

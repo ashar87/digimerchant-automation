@@ -156,3 +156,38 @@ test('a PO in the name that isn’t on file links nothing and asks instead', asy
   assert.equal(loadLedger(db).shipments.find((x) => x.id === 'FBA7').items[0].po, undefined);
   assert.match(awaitingReply(db)[0].text, /Matches PO-002/);
 });
+
+test('European shipments are fetched once and filed under UK or DE by their warehouse', async () => {
+  const db = openLandingDb(':memory:');
+  saveLedger(db, { products: [{ id: 'A-UK', code: 'A', marketplace: 'UK', sku: 'SKU-A' }, { id: 'A-DE', code: 'A', marketplace: 'DE', sku: 'SKU-A' }] }, { actor: 'test' });
+  const eu = [
+    { ...shipment('FBA-UK', 'WORKING'), DestinationFulfillmentCenterId: 'LBA4' },
+    { ...shipment('FBA-DE', 'WORKING'), DestinationFulfillmentCenterId: 'HAJ1' },
+    { ...shipment('FBA-XX', 'WORKING'), DestinationFulfillmentCenterId: 'ZZZ9' },
+  ];
+  // Amazon returns every EU shipment whichever EU marketplace is asked about.
+  const client = recordedSpApi({ shipments: { UK: eu, DE: eu }, items: { 'FBA-UK': [item('SKU-A', 10, 0)], 'FBA-DE': [item('SKU-A', 20, 0)], 'FBA-XX': [] } });
+  const report = await syncAmazon({ db, client, now: new Date('2026-10-10T08:00:00Z') });
+  assert.deepEqual(report.created, ['FBA-UK', 'FBA-DE']);
+  const shipments = loadLedger(db).shipments;
+  assert.equal(shipments.find((s) => s.id === 'FBA-UK').marketplace, 'UK');
+  assert.equal(shipments.find((s) => s.id === 'FBA-DE').marketplace, 'DE');
+  assert.equal(shipments.find((s) => s.id === 'FBA-XX'), undefined);
+  assert.match(report.errors.join(' '), /FBA-XX goes to Amazon warehouse ZZZ9/);
+  assert.equal(client.calls.filter((c) => c[0] === 'getShipments').length, 1); // one query for the region, not one per marketplace
+});
+
+test('no shortfall card while Amazon lists SKUs that are not in the product list', async () => {
+  const db = openLandingDb(':memory:');
+  saveLedger(db, {
+    products: [{ id: 'A-UK', code: 'A', marketplace: 'UK', sku: 'SKU-A' }, { id: 'B-UK', code: 'B', marketplace: 'UK' }],
+    orders: [{ po: 'PO-001', supplier: 'S', marketplace: 'UK', invoices: [{ id: 'i1', kind: 'final', lines: [{ kind: 'goods', product: 'A-UK', qty: 100, rmb: 1000 }, { kind: 'goods', product: 'B-UK', qty: 300, rmb: 900 }] }] }],
+    // B's line came from the sheet; Amazon calls it "OLD-B", which isn't mapped yet.
+    shipments: [{ id: 'FBA9', marketplace: 'UK', status: 'RECEIVING', items: [{ product: 'A-UK', po: 'PO-001', shipped: 100, received: 0 }, { product: 'B-UK', po: 'PO-001', shipped: 300, received: 0 }] }],
+  }, { actor: 'test' });
+  const client = recordedSpApi({ shipments: { UK: [shipment('FBA9', 'CLOSED')] }, items: { FBA9: [item('SKU-A', 100, 100), item('OLD-B', 300, 300)] } });
+  await syncAmazon({ db, client, now: new Date('2026-10-10T08:00:00Z') });
+  const kinds = unsent(db).map((c) => c.kind);
+  assert.ok(kinds.includes('shipment_closed'));
+  assert.ok(!kinds.includes('shortfall'), `unexpected shortfall card: ${kinds}`);
+});
