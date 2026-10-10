@@ -8,6 +8,11 @@
  * its per-message hash instead, then do what the library would have done:
  * resolve the media if WhatsApp hasn't yet, and decrypt it.
  *
+ * The decrypt call must be given the message's mimetype: since October 2026
+ * WhatsApp Web checks the decrypted file against it and rejects every voice note
+ * otherwise. The library (1.34.7) doesn't pass it, which is a second reason its
+ * download fails.
+ *
  * Never throws. On failure it says why (`reason`, `detail`), worked out inside
  * the page: errors thrown there lose everything crossing the Puppeteer boundary,
  * which is how a week of voice-note failures came to be logged as just "r".
@@ -66,6 +71,10 @@ export function downloadByHash(page, hash) {
           mediaKey: m.mediaKey,
           mediaKeyTimestamp: m.mediaKeyTimestamp,
           type: m.type,
+          // WhatsApp Web now checks the decrypted file against this; without it the
+          // file counts as application/octet-stream and every voice note is rejected
+          // ("InvalidMediaFileType: Unexpected mimetype ... for media type ptt").
+          mimetype: m.mimetype,
           signal: new AbortController().signal,
           downloadQpl: mockQpl,
         });

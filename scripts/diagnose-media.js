@@ -49,7 +49,25 @@ client.on('ready', async () => {
       if (typeof r === 'string') return r;
       return r._serialized || (r.user && r.server ? `${r.user}@${r.server}` : String(r));
     };
-    const all = window.require('WAWebCollections').Msg.getModelsArray();
+    // A fresh session only has the last few messages per chat in memory, so load
+    // earlier ones (the library's own fetchMessages method) until voice notes turn up.
+    out.history = {};
+    for (const id of watchedIds) {
+      try {
+        const chat = await window.WWebJS.getChat(id, { getAsModel: false });
+        let rounds = 0;
+        while (rounds < 8 && !chat.msgs.getModelsArray().some((m) => m.type === 'ptt' || m.type === 'audio')) {
+          const more = await window.require('WAWebChatLoadMessages').loadEarlierMsgs({ chat });
+          rounds++;
+          if (!more || !more.length) break;
+        }
+        out.history[id.slice(-12)] = `${chat.msgs.getModelsArray().length} messages after ${rounds} load(s)`;
+      } catch (e) {
+        out.history[id.slice(-12)] = `could not load: ${e?.message || e}`;
+      }
+    }
+    const inCollection = new Set(window.require('WAWebCollections').Msg.getModelsArray().map((m) => m.id?.id));
+    const all = window.require('WAWebCollections').Chat.getModelsArray().flatMap((c) => c.msgs?.getModelsArray?.() || []);
     out.loaded = all.length;
     out.samples = all
       .filter((m) => m.type === 'ptt' || m.type === 'audio')
@@ -63,6 +81,7 @@ client.on('ready', async () => {
         mediaStage: m.mediaData?.mediaStage ?? '(no mediaData)',
         hasDirectPath: !!m.directPath,
         hasMediaKey: !!m.mediaKey,
+        inMsgCollection: inCollection.has(m.id?.id),
       }));
     return out;
   }, watched);
@@ -75,6 +94,8 @@ client.on('ready', async () => {
 
   console.log('\n=== modules ===');
   console.log(JSON.stringify(report.modules, null, 2));
+  console.log('\n=== history loaded ===');
+  console.log(JSON.stringify(report.history, null, 2));
   console.log(`\n=== recent voice notes in watched chats (${report.loaded} messages loaded) ===`);
   if (!report.samples.length) console.log('  none found in the local message cache');
   for (const s of report.samples) console.log(JSON.stringify(s, null, 2));
