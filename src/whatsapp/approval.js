@@ -147,16 +147,20 @@ export function createApprovalFlow(client) {
       return true;
     }
 
-    const m = body.match(/^([a-z]+)?\s*([A-Za-z]\d{1,3})\s*([a-z]+)?\s*(.*)$/i);
+    // The ref's letter is optional: "Y 15" means "Y A15" (every ref starts with A).
+    const m = body.match(/^([a-z]+)?\s*([A-Za-z]?\d{1,3})\s*([a-z]+)?\s*(.*)$/i);
     if (m) {
-      const [, verbBefore, ref, verbAfter, rest] = m;
-      const candidate = store.getCandidateByRef(ref);
-      if (candidate && candidate.status === 'pending') {
-        const parsed = parseVerb(`${verbBefore || verbAfter || ''} ${rest || ''}`.trim());
-        if (parsed) {
-          await applyDecision(candidate, parsed);
+      const [, verbBefore, rawRef, verbAfter, rest] = m;
+      const ref = /^\d/.test(rawRef) ? `A${rawRef}` : rawRef.toUpperCase();
+      const parsed = parseVerb(`${verbBefore || verbAfter || ''} ${rest || ''}`.trim());
+      if (parsed) {
+        const candidate = store.getCandidateByRef(ref);
+        if (!candidate) {
+          await send(`No task [${ref}]. Send *pending* to see what's waiting.`);
           return true;
         }
+        await applyDecision(candidate, parsed); // says so if it was already decided
+        return true;
       }
     }
 
@@ -208,7 +212,7 @@ export function createApprovalFlow(client) {
   return { init, sendCard, handleReply, sendPendingList, send, selfChatId, isSelfChat, selfIds: () => selfIds, sentByBot };
 }
 
-const BOT_PREFIXES = ['🔔', '📋', '✅', '🗑️', '⚠️', '✨', '*Commands*', "Didn't catch that"];
+const BOT_PREFIXES = ['🔔', '📋', '✅', '🗑️', '⚠️', '✨', '*Commands*', "Didn't catch that", 'No task [', 'Nothing pending', '['];
 
 const HELP = `*Commands* (type these to yourself)
 *Y* / *N* — reply to a task card to add or skip it
