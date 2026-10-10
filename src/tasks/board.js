@@ -147,3 +147,29 @@ export function taskHistory(db, ref) {
     .all(ref)
     .map((a) => ({ at: a.at, actor: a.actor, action: a.action, task: a.data ? JSON.parse(a.data) : null }));
 }
+
+/**
+ * An approved WhatsApp candidate (a row from the listener's `candidates` table)
+ * as a New task on the board, keeping its ref, chat and the message it came from.
+ * Approving the same ref twice updates the one task rather than adding another.
+ */
+export function addWhatsAppTask(db, c, { actor = 'Ashar' } = {}) {
+  const existing = getTask(db, c.ref);
+  return saveTask(
+    db,
+    {
+      ...existing,
+      ref: String(c.ref).toUpperCase(),
+      title: c.title,
+      status: existing?.status || 'new',
+      assignee: PEOPLE.includes(c.assignee) ? c.assignee : null,
+      due: /^\d{4}-\d{2}-\d{2}$/.test(c.due_date || '') ? c.due_date : null,
+      priority: PRIORITIES.includes(c.priority) ? c.priority : null,
+      notes: c.notes || null,
+      source: 'whatsapp',
+      sourceChat: c.chat_label || null,
+      sourceQuote: c.quote || null,
+    },
+    { actor, action: existing ? 'edit' : 'create' }
+  );
+}

@@ -1,7 +1,7 @@
 import { config } from '../config.js';
 import { log } from '../logger.js';
 import * as store from '../store/db.js';
-import { createTask, ensureSelectOption } from '../tasks/notion.js';
+import { addWhatsAppTask } from '../tasks/board.js';
 import { messageKey, widString } from './ids.js';
 import { shortDate } from '../util/time.js';
 
@@ -185,18 +185,17 @@ export function createApprovalFlow(client) {
       candidate = store.getCandidateByRef(candidate.ref);
     }
 
+    // Approved tasks go on the dashboard's task board (Notion is no longer written to).
     try {
-      const board = candidate.notion_database_id || undefined;
-      await ensureSelectOption('Source', candidate.chat_label, board);
-      if (candidate.assignee) await ensureSelectOption('Assignee', candidate.assignee, board);
-      const url = await createTask(candidate);
-      store.decideCandidate(candidate.ref, 'approved', url);
+      const task = addWhatsAppTask(store.landingDb(), candidate, { actor: 'Ashar' });
+      const link = config.dashboardUrl ? `${config.dashboardUrl.replace(/\/$/, '')}/tasks/${task.ref}` : null;
+      store.decideCandidate(candidate.ref, 'approved', link);
       store.rememberFingerprint(store.fingerprintOf(candidate.chat_id, candidate.title), candidate.ref);
-      log.ok(`added to Notion [${candidate.ref}] ${candidate.title}`);
-      if (!quiet) await send(`✅ Added: *${candidate.title}*\n${url}`);
+      log.ok(`added to the board [${candidate.ref}] ${candidate.title}`);
+      if (!quiet) await send(`✅ Added: *${candidate.title}*${task.assignee ? ` (${task.assignee})` : ''}${link ? `\n${link}` : ''}`);
     } catch (err) {
-      log.error(`Notion write failed for [${candidate.ref}]:`, err.message);
-      await send(`⚠️ Couldn't add [${candidate.ref}] to Notion: ${err.message}\nReply *Y ${candidate.ref}* to retry.`);
+      log.error(`Board write failed for [${candidate.ref}]:`, err.message);
+      await send(`⚠️ Couldn't add [${candidate.ref}] to the task board: ${err.message}\nReply *Y ${candidate.ref}* to retry.`);
     }
   }
 

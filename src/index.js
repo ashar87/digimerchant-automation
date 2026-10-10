@@ -1,4 +1,4 @@
-import { config, loadChats, assertEnv, assertProviderEnv } from './config.js';
+import { config, loadChats, assertProviderEnv } from './config.js';
 import { log } from './logger.js';
 import { createWhatsAppClient, describeMessage } from './whatsapp/client.js';
 import { createApprovalFlow } from './whatsapp/approval.js';
@@ -11,7 +11,6 @@ import * as store from './store/db.js';
 let chats;
 try {
   assertProviderEnv();
-  assertEnv(['notionApiKey', 'notionDatabaseId']);
   chats = loadChats();
 } catch (err) {
   log.error(err.message);

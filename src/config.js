@@ -94,6 +94,8 @@ export const config = {
   },
 
   // Landing-cost records live apart from the listener's queue, so neither can corrupt the other.
+  // Where the dashboard is reached (e.g. the Tailscale address); used for links in WhatsApp replies.
+  dashboardUrl: process.env.DASHBOARD_URL || null,
   landingDbPath: process.env.LANDING_DB_PATH || path.join(ROOT, 'data', 'landing.db'),
   sessionPath: path.join(ROOT, 'data', 'wa-session'),
   mediaCachePath: path.join(ROOT, 'data', 'media'),

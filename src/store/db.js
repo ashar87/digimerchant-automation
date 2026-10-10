@@ -2,6 +2,8 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
 import { config } from '../config.js';
+import { openLandingDb } from '../landing/store.js';
+import { seedTaskRefs, nextTaskRef, refNumber } from '../tasks/board.js';
 
 fs.mkdirSync(path.dirname(config.dbPath), { recursive: true });
 const db = new Database(config.dbPath);
@@ -87,12 +89,21 @@ export const saveTranscript = (messageId, text) => _saveTranscript.run(messageId
 const _getMeta = db.prepare('SELECT value FROM meta WHERE key = ?');
 const _setMeta = db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
 
+/** The landing-cost database, where approved tasks live on the board. Opened on first use. */
+let landing;
+export const landingDb = () => (landing ??= openLandingDb(config.landingDbPath));
+
+/**
+ * Refs come from the board's counter, shared with tasks added on the dashboard,
+ * so a number is never used twice. This database's own counter is folded in
+ * (it was the only one before the board) and kept in step.
+ */
 export function nextRef() {
-  const n = Number(_getMeta.get('ref_counter')?.value || 0) + 1;
-  _setMeta.run('ref_counter', String(n));
-  const letter = String.fromCharCode(65 + Math.floor((n - 1) / 99) % 26); // A..Z
-  const digits = ((n - 1) % 99) + 1;
-  return `${letter}${digits}`;
+  const board = landingDb();
+  seedTaskRefs(board, Number(_getMeta.get('ref_counter')?.value || 0));
+  const ref = nextTaskRef(board);
+  _setMeta.run('ref_counter', String(refNumber(ref)));
+  return ref;
 }
 
 /* ---------- candidates ---------- */
