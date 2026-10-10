@@ -4,6 +4,7 @@ data/
 .wwebjs_auth/
 .wwebjs_cache/
 config/chats.json
+config/people.json
 
 # Dry-run and runtime logs contain real chat content
 *.log

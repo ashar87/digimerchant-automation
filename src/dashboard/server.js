@@ -9,7 +9,9 @@
  */
 import http from 'node:http';
 import { pathToFileURL } from 'node:url';
-import { config } from '../config.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import { config, ROOT } from '../config.js';
 import { openLandingDb, loadLedger } from '../landing/store.js';
 import { seedTaskRefs, whatsappRefCounter } from '../tasks/board.js';
 import { createSpApi, spApiConfigured } from '../amazon/spapi.js';
@@ -28,31 +30,54 @@ export const ACTORS = (process.env.DASHBOARD_USERS || 'Ashar,Atif').split(',').m
 
 export { HttpError } from './errors.js';
 
-export function createDashboard({ db, spapi = null, sheets = null, invoiceReader = null, wise = null, qbo = null }) {
+/**
+ * `people` switches on Tailscale sign-in: { "login@example.com": "Ashar", … }.
+ * The dashboard then sits behind `tailscale serve`, which tells it who is signed
+ * in (the Tailscale-User-Login header); anyone not in the map is refused, and
+ * there's no name to pick. Without it (local development) the name is picked
+ * once and kept in a cookie.
+ */
+export function createDashboard({ db, spapi = null, sheets = null, invoiceReader = null, wise = null, qbo = null, people = null }) {
   return http.createServer(async (req, res) => {
     try {
-      await handle({ db, spapi, sheets, invoiceReader, wise, qbo }, req, res);
+      await handle({ db, spapi, sheets, invoiceReader, wise, qbo, people }, req, res);
     } catch (err) {
       const status = err.status || 500;
       if (status === 500) console.error('[dashboard]', err);
       const heading = { 400: 'Check the form', 403: 'Refused', 404: 'Not found', 409: 'Someone else saved first' }[status] || 'Something went wrong';
       const back = err.back && err.back.startsWith('/') && !err.back.startsWith('//') ? err.back : '/';
-      const who = parseCookies(req.headers.cookie).actor;
-      send(res, status, layout({ title: heading, path: '', actor: ACTORS.includes(who) ? who : null, body: raw(`<h1>${heading}</h1><p>${escapeText(err.message)}</p><p><a href="${escapeText(back)}">${back === '/' ? 'Back to the inbox' : 'Open it again'}</a></p>`) }));
+      let who = null;
+      try {
+        who = identify(req, people);
+      } catch {}
+      send(res, status, layout({ title: heading, path: '', actor: who, body: raw(`<h1>${heading}</h1><p>${escapeText(err.message)}</p><p><a href="${escapeText(back)}">${back === '/' ? 'Back to the inbox' : 'Open it again'}</a></p>`) }));
     }
   });
 }
 
-async function handle({ db, spapi, sheets, invoiceReader, wise, qbo }, req, res) {
+/** Who is asking: the Tailscale sign-in when `people` is set, else the cookie. Throws 403 for strangers. */
+function identify(req, people) {
+  if (!people) {
+    const who = parseCookies(req.headers.cookie).actor;
+    return ACTORS.includes(who) ? who : null;
+  }
+  const login = String(req.headers['tailscale-user-login'] || '').trim().toLowerCase();
+  if (!login) throw new HttpError(403, 'Open the dashboard through its Tailscale link, signed in to Tailscale as Ashar or Atif.');
+  const name = people[login];
+  if (!name || !ACTORS.includes(name)) throw new HttpError(403, `${login} isn't allowed to use the dashboard. Ask Ashar to add you.`);
+  return name;
+}
+
+async function handle({ db, spapi, sheets, invoiceReader, wise, qbo, people }, req, res) {
   const url = new URL(req.url, 'http://localhost');
-  const cookies = parseCookies(req.headers.cookie);
-  const actor = ACTORS.includes(cookies.actor) ? cookies.actor : null;
+  const actor = identify(req, people);
 
   if (req.method === 'POST' && !sameOrigin(req)) throw new HttpError(403, 'Refused: this form was not submitted from the dashboard.');
   if (req.method === 'GET' && url.pathname === '/app.js') return send(res, 200, APP_JS, 'text/javascript; charset=utf-8');
 
   // Choosing who you are is the one page that works before you've chosen.
   if (url.pathname === '/who') {
+    if (people) return redirect(res, '/'); // Tailscale already says who you are
     if (req.method === 'POST') {
       const form = await readForm(req);
       const who = form.get('actor');
@@ -99,6 +124,18 @@ async function handle({ db, spapi, sheets, invoiceReader, wise, qbo }, req, res)
   if (Buffer.isBuffer(out?.body)) return send(res, 200, out.body, out.type, out.headers);
   const inboxCount = inboxItems(ctx).filter((i) => i.count).length;
   send(res, 200, layout({ title: out.title, path: url.pathname, actor, inboxCount, flash: url.searchParams.get('ok'), body: out.body }));
+}
+
+/** config/people.json: Tailscale login → name. Lower-cased logins; every name must be one of ACTORS. */
+export function loadPeople(file) {
+  if (!fs.existsSync(file)) throw new Error(`DASHBOARD_TAILSCALE=1 needs ${file}: { "you@example.com": "Ashar", … }`);
+  const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const people = {};
+  for (const [login, name] of Object.entries(raw)) {
+    if (!ACTORS.includes(name)) throw new Error(`${file}: ${login} maps to "${name}", which isn't one of ${ACTORS.join(', ')}`);
+    people[login.trim().toLowerCase()] = name;
+  }
+  return people;
 }
 
 function whoPage(next) {
@@ -191,7 +228,8 @@ if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   const qbo = qboConfigured(config.qbo) ? qboFromConfig(db, config.qbo) : null;
   // Board refs carry on from the WhatsApp listener's, so A-numbers never repeat.
   seedTaskRefs(db, whatsappRefCounter(config.dbPath));
-  createDashboard({ db, spapi, sheets, invoiceReader, wise, qbo }).listen(port, '127.0.0.1', () => {
-    console.log(`Landing-cost dashboard: http://127.0.0.1:${port}  (database ${config.landingDbPath})`);
+  const people = process.env.DASHBOARD_TAILSCALE === '1' ? loadPeople(path.join(ROOT, 'config', 'people.json')) : null;
+  createDashboard({ db, spapi, sheets, invoiceReader, wise, qbo, people }).listen(port, '127.0.0.1', () => {
+    console.log(`Landing-cost dashboard: http://127.0.0.1:${port}  (database ${config.landingDbPath}${people ? `; Tailscale sign-in for ${Object.values(people).join(', ')}` : ''})`);
   });
 }

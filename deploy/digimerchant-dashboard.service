@@ -13,6 +13,8 @@ WorkingDirectory=/opt/digimerchant
 ExecStart=/usr/bin/node src/dashboard/server.js
 Environment=TZ=Europe/London
 Environment=NODE_ENV=production
+# Behind `tailscale serve`: who you are comes from your Tailscale sign-in (config/people.json).
+Environment=DASHBOARD_TAILSCALE=1
 Restart=always
 RestartSec=10
 StandardOutput=journal
