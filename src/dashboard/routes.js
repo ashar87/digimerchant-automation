@@ -11,6 +11,7 @@ import { settingsPage, saveSettings } from './views/settings.js';
 import { runAmazonSync, replyToCard, messagesPage } from './views/amazon.js';
 import { wisePage, fetchWise, ignoreTransfer, lookupRate } from './views/wise.js';
 import { boardPage, newTaskPage, taskPage, saveTaskForm, moveTask, deleteTaskPage, deleteTaskForm } from './views/tasks.js';
+import { usagePage } from './views/usage.js';
 import { invoicesPage, uploadInvoice, draftPage, saveDraft, discardDraft, draftFile } from './views/invoices.js';
 
 const SEG = '([^/]+)';
@@ -87,6 +88,7 @@ export const routes = [
   r('GET', '/messages', messagesPage),
 
   r('GET', '/annie', anniePage),
+  r('GET', '/usage', usagePage),
   r('GET', '/settings', settingsPage),
   r('POST', '/settings', saveSettings),
 ];

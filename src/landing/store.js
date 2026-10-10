@@ -237,6 +237,21 @@ CREATE TABLE IF NOT EXISTS tasks (
   done_at      TEXT
 );
 
+-- One row per Gemini call (src/ai/usage.js): tokens and what it cost, in USD.
+CREATE TABLE IF NOT EXISTS ai_usage (
+  id              INTEGER PRIMARY KEY,
+  at              TEXT NOT NULL,
+  job             TEXT NOT NULL,
+  detail          TEXT,
+  model           TEXT NOT NULL,
+  input_tokens    INTEGER NOT NULL DEFAULT 0,
+  output_tokens   INTEGER NOT NULL DEFAULT 0,
+  thinking_tokens INTEGER NOT NULL DEFAULT 0,
+  audio_tokens    INTEGER NOT NULL DEFAULT 0,
+  cost_usd        TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_at ON ai_usage(at);
+
 -- Both owners edit; every change records who and when.
 CREATE TABLE IF NOT EXISTS audit_log (
   id        INTEGER PRIMARY KEY,

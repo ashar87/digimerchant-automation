@@ -81,7 +81,7 @@ export const NAV = [
   { key: 'shipping', label: 'Shipping', href: '/shipments', tabs: [['/shipments', 'Shipments'], ['/bills', 'Courier bills']] },
   { key: 'costs', label: 'Costs', href: '/costs', tabs: [['/costs', 'Landing costs'], ['/sellerboard', 'Sellerboard']] },
 ];
-const SETTINGS = { key: 'settings', label: 'Settings', href: '/settings', tabs: [['/products', 'Products'], ['/messages', 'Messages'], ['/settings', 'Settings']] };
+const SETTINGS = { key: 'settings', label: 'Settings', href: '/settings', tabs: [['/products', 'Products'], ['/messages', 'Messages'], ['/usage', 'AI usage'], ['/settings', 'Settings']] };
 
 const under = (path, href) => (href === '/' ? path === '/' : path === href || path.startsWith(`${href}/`) || path.startsWith(`${href}.`));
 function groupFor(path) {
@@ -215,6 +215,7 @@ nav.seg{display:none}
 .filters{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:flex-end}
 label.check{display:flex;align-items:center;gap:6px}
 a.danger-link{color:var(--bad)}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.stats .card{margin:0;padding:10px 12px}.stats .big{font-size:22px;font-weight:650;font-variant-numeric:tabular-nums}
 blockquote{margin:6px 0 0;padding-left:10px;border-left:3px solid var(--line)}
 .notice{background:var(--wait-bg);color:var(--wait);padding:8px 12px;border-radius:8px;margin:10px 0}
 @media (max-width:760px){
@@ -260,6 +261,7 @@ blockquote{margin:6px 0 0;padding-left:10px;border-left:3px solid var(--line)}
   nav.seg a.on .muted{color:inherit}
   .task .t-move button{flex:1}
   .filters>div{flex:1 1 140px}
+  .stats{gap:6px}.stats .card{padding:8px}.stats .big{font-size:17px}
   .grid input,.grid select{width:100%}
   /* Form grids (invoice lines, payment rows): each row becomes a stack of labelled fields. */
   table.rows.stack td{display:block;text-align:left}

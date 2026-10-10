@@ -55,6 +55,8 @@ export function geminiInvoiceReader(provider) {
         text: 'Read this supplier invoice. Return null for anything you cannot read with certainty.',
         attachments: [{ kind, mime, data }],
         schema: INVOICE_SCHEMA,
+        job: 'invoice',
+        label: kind === 'pdf' ? 'Invoice PDF' : 'Invoice photo',
       });
       return { ...out.data, model: out.model };
     },

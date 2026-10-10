@@ -2,6 +2,7 @@ import { GoogleGenAI } from '@google/genai';
 import { config } from '../config.js';
 import { geminiSchema } from './schema.js';
 import { withRetry } from './retry.js';
+import { noteUsage, usageFrom } from '../ai/usage.js';
 
 let client;
 const api = () => (client ??= new GoogleGenAI({ apiKey: config.geminiApiKey }));
@@ -24,7 +25,7 @@ function toPart(a) {
   return part;
 }
 
-export async function extract({ system, text, attachments = [] }) {
+export async function extract({ system, text, attachments = [], label = null }) {
   const parts = [{ text }, ...attachments.map(toPart)];
 
   // Screenshots and PDFs get the stronger model; plain chat stays on the cheap one.
@@ -48,8 +49,9 @@ export async function extract({ system, text, attachments = [] }) {
     throw new Error(`Gemini returned unparseable JSON: ${String(res.text).slice(0, 200)}`);
   }
 
-  const u = res.usageMetadata || {};
-  return { tasks, model, usage: { in: u.promptTokenCount ?? 0, out: u.candidatesTokenCount ?? 0 } };
+  const usage = usageFrom(res);
+  noteUsage({ job: 'tasks', detail: label, model, ...usage });
+  return { tasks, model, usage: { in: usage.input, out: usage.output + usage.thinking } };
 }
 
 /**
@@ -57,12 +59,13 @@ export async function extract({ system, text, attachments = [] }) {
  * always on the vision model. (Gemini 3.8 dropped the sampling settings such as
  * temperature; the JSON schema is what keeps the output consistent.)
  */
-export async function readJson({ system, text, attachments = [], schema }) {
+export async function readJson({ system, text, attachments = [], schema, job = 'document', label = null }) {
   const res = await withRetry(() => api().models.generateContent({
     model: config.geminiVisionModel,
     contents: [{ role: 'user', parts: [{ text }, ...attachments.map(toPart)] }],
     config: { systemInstruction: system, responseMimeType: 'application/json', responseSchema: schema },
   }), { label: `gemini/${config.geminiVisionModel}` });
+  noteUsage({ job, detail: label, model: config.geminiVisionModel, ...usageFrom(res) });
   try {
     return { data: JSON.parse(res.text), model: config.geminiVisionModel };
   } catch {
@@ -74,7 +77,7 @@ export async function readJson({ system, text, attachments = [], schema }) {
  * Transcribes a voice note. Handles Urdu, Roman Urdu, English, and — importantly
  * for this business — sentences that switch between them mid-flow.
  */
-export async function transcribeAudio({ mime, data }) {
+export async function transcribeAudio({ mime, data, label = null }) {
   const res = await withRetry(() => api().models.generateContent({
     model: config.transcribeModel,
     contents: [
@@ -94,6 +97,7 @@ export async function transcribeAudio({ mime, data }) {
       },
     ],
   }), { label: `transcribe/${config.transcribeModel}` });
+  noteUsage({ job: 'transcribe', detail: label, model: config.transcribeModel, ...usageFrom(res) });
 
   return (res.text || '').trim();
 }

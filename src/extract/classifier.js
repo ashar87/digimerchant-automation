@@ -21,6 +21,7 @@ export async function extractTasks({ chatId, chatLabel, chatContext, isGroup, me
       system: systemPrompt({ people }),
       text,
       attachments: usable,
+      label: `${chatLabel} · ${messages.length} msg${messages.length === 1 ? '' : 's'}${usable.length ? ` + ${usable.length} attachment${usable.length === 1 ? '' : 's'}` : ''}`,
     });
 
     log.debug(
