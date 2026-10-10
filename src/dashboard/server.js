@@ -17,7 +17,7 @@ import { geminiInvoiceReader } from '../invoices/model.js';
 import { createWise, wiseConfigured } from '../wise/client.js';
 import { qboConfigured, qboFromConfig } from '../quickbooks/client.js';
 import { computeLandingCosts } from '../landing/engine.js';
-import { layout, raw } from './html.js';
+import { layout, raw, APP_JS } from './html.js';
 import { inboxItems } from './views/inbox.js';
 import { routes } from './routes.js';
 import { HttpError } from './errors.js';
@@ -48,6 +48,7 @@ async function handle({ db, spapi, sheets, invoiceReader, wise, qbo }, req, res)
   const actor = ACTORS.includes(cookies.actor) ? cookies.actor : null;
 
   if (req.method === 'POST' && !sameOrigin(req)) throw new HttpError(403, 'Refused: this form was not submitted from the dashboard.');
+  if (req.method === 'GET' && url.pathname === '/app.js') return send(res, 200, APP_JS, 'text/javascript; charset=utf-8');
 
   // Choosing who you are is the one page that works before you've chosen.
   if (url.pathname === '/who') {

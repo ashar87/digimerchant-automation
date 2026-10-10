@@ -1,3 +1,4 @@
+import { html } from './html.js';
 import { inboxPage } from './views/inbox.js';
 import { ordersPage, createOrder, orderPage, editInvoicePage, saveInvoice, deleteInvoice, markReviewed, addWriteOff } from './views/orders.js';
 import { paymentsPage, paymentForm, savePayment, deletePayment } from './views/payments.js';
@@ -17,6 +18,8 @@ const r = (method, path, handler) => ({ method, pattern: new RegExp(`^${path.rep
 
 export const routes = [
   r('GET', '/', inboxPage),
+  // Placeholder until the task board is built (next step).
+  r('GET', '/tasks', () => ({ title: 'Tasks', body: html`<h1>Tasks</h1><p class="sub">The task board is being built: New, In Progress and Done, with tasks from WhatsApp and ones you add yourself.</p>` })),
 
   r('GET', '/orders', ordersPage),
   r('POST', '/orders', createOrder),

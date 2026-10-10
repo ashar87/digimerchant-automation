@@ -62,46 +62,87 @@ export function select(name, options, selected, { blank = false, attrs = '' } = 
 
 /* ---------- layout ---------- */
 
-const NAV = [
-  ['/', 'Inbox'],
-  ['/orders', 'Orders'],
-  ['/invoices', 'Invoices'],
-  ['/shipments', 'Shipments'],
-  ['/costs', 'Costs'],
-  ['/payments', 'Payments'],
-  ['/bills', 'Bills'],
-  ['/sellerboard', 'Sellerboard'],
-  ['/products', 'Products'],
-  ['/annie', 'Annie'],
-  ['/settings', 'Settings'],
+// Line icons (24px viewBox, 2px stroke), drawn inline so nothing loads from elsewhere.
+const ICON = {
+  inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+  tasks: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="m9 12 2 2 4-4"/>',
+  purchasing: '<circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/>',
+  shipping: '<path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.62L18.3 9.38a1 1 0 0 0-.78-.38H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/>',
+  costs: '<path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>',
+  settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+};
+const icon = (name) => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON[name]}</svg>`;
+
+// Grouped by how the work flows: buy, then ship, then cost. Settings sits apart.
+export const NAV = [
+  { key: 'inbox', label: 'Inbox', href: '/', tabs: [['/', 'Inbox']] },
+  { key: 'tasks', label: 'Tasks', href: '/tasks', tabs: [['/tasks', 'Tasks']] },
+  { key: 'purchasing', label: 'Purchasing', href: '/orders', tabs: [['/orders', 'Orders'], ['/invoices', 'Invoices'], ['/payments', 'Payments'], ['/annie', 'Annie']], also: ['/wise'] },
+  { key: 'shipping', label: 'Shipping', href: '/shipments', tabs: [['/shipments', 'Shipments'], ['/bills', 'Courier bills']] },
+  { key: 'costs', label: 'Costs', href: '/costs', tabs: [['/costs', 'Landing costs'], ['/sellerboard', 'Sellerboard']] },
 ];
+const SETTINGS = { key: 'settings', label: 'Settings', href: '/settings', tabs: [['/products', 'Products'], ['/messages', 'Messages'], ['/settings', 'Settings']] };
+
+const under = (path, href) => (href === '/' ? path === '/' : path === href || path.startsWith(`${href}/`) || path.startsWith(`${href}.`));
+function groupFor(path) {
+  return [...NAV, SETTINGS].find((g) => g.tabs.some(([href]) => under(path, href)) || (g.also || []).some((href) => under(path, href))) || null;
+}
 
 export function layout({ title, path = '/', actor, inboxCount = 0, flash, body }) {
-  const active = (href) => (href === '/' ? path === '/' : path.startsWith(href));
+  const group = groupFor(path);
+  const badge = (g) => (g.key === 'inbox' && inboxCount ? ` <span class="count" aria-label="${inboxCount} need you">${inboxCount}</span>` : '');
+  const mainLink = (g, cls) =>
+    `<a class="${cls}${group?.key === g.key ? ' on' : ''}" href="${g.href}"${group?.key === g.key ? ' aria-current="page"' : ''}>${icon(g.key)}<span>${esc(g.label)}</span>${badge(g)}</a>`;
+  const subTabs =
+    group && group.tabs.length > 1
+      ? `<nav class="subtabs" aria-label="${esc(group.label)}">${group.tabs
+          .map(([href, label]) => `<a href="${href}"${under(path, href) || (href === '/payments' && under(path, '/wise')) ? ' class="on" aria-current="page"' : ''}>${esc(label)}</a>`)
+          .join('')}</nav>`
+      : '';
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>${esc(title)} · Landing costs</title>
 <style>${CSS}</style>
+<script src="/app.js" defer></script>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 <header class="top">
-  <a class="brand" href="/">Landing costs</a>
-  <nav>${NAV.map(
-    ([href, label]) =>
-      `<a href="${href}"${active(href) ? ' class="on"' : ''}>${esc(label)}${href === '/' && inboxCount ? ` <span class="count">${inboxCount}</span>` : ''}</a>`
-  ).join('')}</nav>
-  <a class="who" href="/who">${esc(actor || 'Who are you?')}</a>
+  <a class="brand" href="/">Digi Merchant</a>
+  <nav class="main" aria-label="Main">${NAV.map((g) => mainLink(g, 'tab')).join('')}</nav>
+  <div class="right">
+    <a class="cog${group?.key === 'settings' ? ' on' : ''}" href="/settings" aria-label="Settings" title="Settings">${icon('settings')}</a>
+    <a class="who" href="/who">${esc(actor || 'Who are you?')}</a>
+  </div>
 </header>
-<main>
-${flash ? `<p class="flash">${esc(flash)}</p>` : ''}
+${subTabs}
+<main id="main">
+${flash ? `<p class="flash" role="status">${esc(flash)}</p>` : ''}
 ${esc(body)}
 </main>
+<nav class="bottom" aria-label="Main">${NAV.map((g) => mainLink(g, 'bt')).join('')}</nav>
 </body>
 </html>`;
 }
+
+/**
+ * Served as /app.js. Copies each table's column headings onto its cells, so on a
+ * phone every row can be shown as a labelled card instead of a table that runs
+ * off the right of the screen.
+ */
+export const APP_JS = `document.querySelectorAll('table').forEach(function (t) {
+  var heads = Array.prototype.map.call(t.querySelectorAll('thead th'), function (th) { return th.textContent.trim(); });
+  if (!heads.length) return;
+  t.classList.add('stack');
+  t.querySelectorAll('tbody tr').forEach(function (tr) {
+    Array.prototype.forEach.call(tr.children, function (td, i) {
+      if (!td.hasAttribute('data-label') && heads[i]) td.setAttribute('data-label', heads[i]);
+    });
+  });
+});`;
 
 const CSS = `
 :root{--bg:#f7f7f5;--card:#fff;--ink:#1d1d1b;--muted:#6b6b66;--line:#e4e3de;--accent:#1f5f8b;
@@ -111,12 +152,24 @@ const CSS = `
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
 a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
-header.top{display:flex;flex-wrap:wrap;align-items:center;gap:8px 20px;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:1}
-.brand{font-weight:650;color:var(--ink)}
-nav{display:flex;flex-wrap:wrap;gap:2px 14px;flex:1}
-nav a{color:var(--muted);padding:2px 0}nav a.on{color:var(--ink);font-weight:600;border-bottom:2px solid var(--accent)}
-.count{background:var(--bad);color:#fff;border-radius:9px;padding:0 6px;font-size:12px;font-weight:600}
-.who{font-size:13px;color:var(--muted)}
+header.top{display:flex;align-items:center;gap:8px 22px;padding:8px 16px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10}
+.brand{font-weight:650;color:var(--ink);white-space:nowrap}
+.ic{width:18px;height:18px;flex:none}
+nav.main{display:flex;gap:4px;flex:1;flex-wrap:wrap}
+nav.main a{display:flex;align-items:center;gap:6px;color:var(--muted);padding:8px 10px;border-radius:8px;min-height:40px}
+nav.main a:hover{background:var(--bg);text-decoration:none}
+nav.main a.on{color:var(--ink);font-weight:600;background:var(--bg)}
+.right{display:flex;align-items:center;gap:6px;margin-left:auto}
+.cog{display:flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:8px;color:var(--muted)}
+.cog.on,.cog:hover{color:var(--ink);background:var(--bg)}
+.count{background:var(--bad);color:#fff;border-radius:9px;padding:0 6px;font-size:12px;font-weight:600;line-height:18px}
+.who{font-size:13px;color:var(--muted);padding:8px 4px}
+nav.subtabs{display:flex;gap:6px;padding:8px 16px;background:var(--card);border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+nav.subtabs a{white-space:nowrap;color:var(--muted);padding:6px 12px;border-radius:999px;border:1px solid var(--line);min-height:34px;display:flex;align-items:center}
+nav.subtabs a.on{color:var(--ink);font-weight:600;border-color:var(--accent)}
+nav.bottom{display:none}
+.skip{position:absolute;left:-999px}.skip:focus{left:8px;top:8px;z-index:100;background:var(--card);padding:8px}
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 main{max-width:1180px;margin:0 auto;padding:18px 16px 60px}
 h1{font-size:22px;margin:4px 0 4px}h2{font-size:16px;margin:26px 0 8px}h3{font-size:14px;margin:16px 0 6px}
 .sub{color:var(--muted);margin:0 0 14px}
@@ -151,5 +204,34 @@ dl.working dt{color:var(--muted)}dl.working dd{margin:0;font-variant-numeric:tab
 .rules{margin:10px 0 0;padding-left:22px}.rules li{margin:0 0 8px}
 .pager{display:flex;gap:18px;align-items:center}
 .notice{background:var(--wait-bg);color:var(--wait);padding:8px 12px;border-radius:8px;margin:10px 0}
-@media (max-width:640px){main{padding:12px 12px 40px}th,td{padding:5px 6px}}
+@media (max-width:760px){
+  body{font-size:16px}
+  header.top{position:static;padding:8px 12px}
+  nav.main{display:none}
+  nav.bottom{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:10;background:var(--card);border-top:1px solid var(--line);padding:4px 4px calc(4px + env(safe-area-inset-bottom))}
+  nav.bottom a{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:52px;color:var(--muted);font-size:11px;position:relative;text-decoration:none}
+  nav.bottom a.on{color:var(--accent);font-weight:600}
+  nav.bottom .ic{width:22px;height:22px}
+  nav.bottom .count{position:absolute;top:2px;left:calc(50% + 6px);font-size:10px;line-height:16px;padding:0 5px}
+  main{padding:12px 12px calc(84px + env(safe-area-inset-bottom))}
+  h1{font-size:20px}
+  input,select,textarea,button,.button{font-size:16px;min-height:44px}
+  input[type=checkbox]{min-height:auto}
+  .grid{grid-template-columns:1fr}
+  /* Tables become labelled cards: one card per row, the heading beside each value. */
+  table.stack thead{display:none}
+  table.stack,table.stack tbody,table.stack tr,table.stack td{display:block;width:100%}
+  table.stack tr{border:1px solid var(--line);border-radius:8px;padding:6px 10px;margin:0 0 8px;background:var(--card)}
+  table.stack td{display:flex;justify-content:space-between;gap:12px;border:0;padding:4px 0;text-align:right;white-space:normal;overflow-wrap:anywhere}
+  table.stack td::before{content:attr(data-label);color:var(--muted);font-size:13px;text-align:left;flex:none;max-width:45%}
+  table.stack td:not([data-label])::before,table.stack td[data-label=""]::before{content:none}
+  table.stack td:first-child{font-weight:600;white-space:normal}
+  table.stack td:empty{display:none}
+  table.stack tr.total{background:var(--bg)}
+  .card.scroll{padding:0;border:0;background:transparent}
+  /* Form grids (invoice lines, payment rows): each row becomes a stack of labelled fields. */
+  table.rows.stack td{display:block;text-align:left}
+  table.rows.stack td::before{display:block;margin-bottom:2px}
+  table.rows.stack td input,table.rows.stack td select{width:100%}
+}
 `;
