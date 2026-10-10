@@ -144,7 +144,7 @@ export function ordersPage(ctx) {
 <p class="muted small">${matching.length ? `Showing ${(page - 1) * PAGE_SIZE + 1}–${(page - 1) * PAGE_SIZE + shown.length} of ${matching.length}` : 'No orders match'}${filtered ? ` (of ${ledger.orders.length} in all)` : ''}</p>
 ${shown.length
   ? html`<div class="card scroll"><table>
-<thead><tr><th>PO</th><th>Supplier</th><th>Mkt</th><th>Products</th><th>Invoice</th><th class="n">RMB</th><th>Status</th><th></th></tr></thead>
+<thead><tr><th>PO</th><th>Supplier</th><th>Mkt</th><th>Products</th><th>Invoice</th><th class="n">RMB</th><th class="key">Status</th><th></th></tr></thead>
 <tbody>${shown.map(({ o, r, stage }) => html`<tr><td><a href="/orders/${enc(o.po)}">${o.po}</a></td><td>${o.supplier}</td><td>${o.marketplace}</td>
   <td class="small">${r.lines.map((l, i) => html`${i ? ', ' : ''}${productName(ledger, l.product)} ×${units(l.ordered)}`)}</td>
   <td class="small">${r.invoices.length > 1 ? `${r.invoices.length} invoices` : r.invoice ? `${r.invoice.kind} ${r.invoice.date || ''}` : '—'}</td><td class="n">${rmb(r.totalRmb)}</td>
@@ -194,7 +194,7 @@ ${order.importNotes?.length
 
 <h2>Products${r.invoices.length ? html` <span class="muted small">· ${r.invoices.length > 1 ? `${r.invoices.length} invoices` : `${r.invoice.kind} invoice ${r.invoice.date || ''}`} · ${rmb(r.totalRmb)} RMB</span>` : ''}</h2>
 <div class="card scroll"><table>
-<thead><tr><th>Product</th><th class="n">Units</th><th class="n">RMB share</th><th class="n">Line cost</th><th class="n">Product / unit</th><th>Divided by</th><th class="n">Landing / unit</th></tr></thead>
+<thead><tr><th>Product</th><th class="n">Units</th><th class="n">RMB share</th><th class="n">Line cost</th><th class="n">Product / unit</th><th>Divided by</th><th class="n key">Landing / unit</th></tr></thead>
 <tbody>${r.lines.map((l) => {
   const landings = batches.filter((b) => b.product === l.product && b.landingCost !== null);
   return html`<tr><td>${productName(ledger, l.product)}</td><td class="n">${units(l.ordered)}</td><td class="n">${pct(l.fraction)}</td>
@@ -207,14 +207,14 @@ ${r.lines.some((l) => l.projected) ? html`<p class="muted small">* Only the depo
 
 <h2>Payments ${r.paidStatus === 'paid' ? html`<span class="muted small">· fully paid</span>` : ''}</h2>
 <div class="card scroll"><table>
-<thead><tr><th>Date</th><th>Payment</th><th>Reference</th><th>Part</th><th class="n">${cur}</th><th class="n">RMB</th></tr></thead>
+<thead><tr><th>Date</th><th>Payment</th><th>Reference</th><th>Part</th><th class="n key">${cur}</th><th class="n">RMB</th></tr></thead>
 <tbody>${r.payments.map((p) => html`<tr><td>${p.date}</td><td><a href="/payments/${enc(p.payment)}">${p.payment}</a></td><td>${p.reference || ''}</td><td>${p.part || ''}</td><td class="n">${money(p.amount, cur)}</td><td class="n">${rmb(p.rmb)}</td></tr>`)}
 <tr class="total"><td colspan="4">Total</td><td class="n">${money(r.cash, cur)}</td><td class="n">${rmb(r.paidRmb)}</td></tr></tbody></table>
 <p><a class="button" href="/payments/new?po=${enc(order.po)}">Record a payment</a></p></div>
 
 <h2>Shipments from this order</h2>
 ${shipments.length
-  ? html`<div class="card scroll"><table><thead><tr><th>Shipment</th><th>Amazon</th><th class="n">Shipped</th><th class="n">Received</th><th class="n">Delivery / unit</th></tr></thead><tbody>${shipments.map((s) => {
+  ? html`<div class="card scroll"><table><thead><tr><th>Shipment</th><th>Amazon</th><th class="n">Shipped</th><th class="n">Received</th><th class="n key">Delivery / unit</th></tr></thead><tbody>${shipments.map((s) => {
       const sr = shipmentResults.get(s.id);
       const mine = s.items.filter((i) => i.po === order.po);
       return html`<tr><td><a href="/shipments/${enc(s.id)}">${s.id}</a></td><td>${shipmentStatusLabel(s.status)}</td>

@@ -10,7 +10,7 @@ export function costsPage(ctx) {
 <h1>Landing costs by batch</h1>
 <p class="sub">One row per product per shipment — what Sellerboard receives. GBP for the UK and DE, USD for the US.</p>
 <div class="card scroll"><table>
-<thead><tr><th>Product</th><th>Mkt</th><th>Shipment</th><th class="n">Units</th><th class="n">Product</th><th class="n">Delivery</th><th class="n">Landing</th><th>Status</th></tr></thead>
+<thead><tr><th>Product</th><th>Mkt</th><th>Shipment</th><th class="n">Units</th><th class="n">Product</th><th class="n">Delivery</th><th class="n key">Landing</th><th>Status</th></tr></thead>
 <tbody>${batches.map((b) => html`<tr><td><a href="/costs/${enc(b.shipment)}/${enc(b.product)}">${productName(ledger, b.product)}</a></td><td>${b.marketplace}</td>
 <td><a href="/shipments/${enc(b.shipment)}">${b.shipment}</a></td><td class="n">${units(b.units)}</td><td class="n">${unitCost(b.productCost, b.currency)}</td>
 <td class="n">${unitCost(b.deliveryCost, b.currency)}${b.deliveryBasis === 'estimated' ? html` <span class="muted small">est.</span>` : ''}</td>

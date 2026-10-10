@@ -32,7 +32,7 @@ export function paymentsPage(ctx) {
 <p class="sub">Every Wise transfer, its rate, and what it paid for. The PO goes in the Wise reference.</p>
 <p><a class="button" href="/payments/new">Record a payment</a> <a href="/wise" style="margin-left:10px">From Wise</a></p>
 <div class="card scroll"><table>
-<thead><tr><th>Date</th><th>Payment</th><th>Reference</th><th class="n">USD</th><th class="n">GBP / EUR</th><th class="n">QB rate</th><th>Paid for</th></tr></thead>
+<thead><tr><th>Date</th><th>Payment</th><th>Reference</th><th class="n key">USD</th><th class="n">GBP / EUR</th><th class="n">QB rate</th><th>Paid for</th></tr></thead>
 <tbody>${[...ledger.payments].reverse().map((p) => html`<tr><td>${p.date}</td><td><a href="/payments/${enc(p.id)}">${p.id}</a></td><td>${p.reference || ''}</td>
 <td class="n">${money(p.usd, 'USD')}</td><td class="n">${p.gbp ? money(p.gbp, 'GBP') : p.eur ? money(p.eur, 'EUR') : '—'}</td><td class="n">${p.qbRate || '—'}</td>
 <td class="small">${(p.allocations || []).map((a, i) => html`${i ? ', ' : ''}${a.type === 'order' ? html`<a href="/orders/${enc(a.target)}">${a.target}</a>` : a.type === 'bill' ? html`<a href="/bills/${enc(a.target)}">${a.target}</a>` : a.target || a.type}${a.part ? ` ${a.part}` : ''}`)}</td></tr>`)}

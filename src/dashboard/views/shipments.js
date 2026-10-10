@@ -18,7 +18,7 @@ export function shipmentsPage(ctx) {
 ${amazonPanel(ctx)}
 <p><a class="button" href="/shipments/new">Add a shipment</a></p>
 <div class="card scroll"><table>
-<thead><tr><th>Shipment</th><th>Mkt</th><th>Contents</th><th>Amazon</th><th class="n">Received</th><th>Order</th><th class="n">Delivery / unit</th></tr></thead>
+<thead><tr><th>Shipment</th><th>Mkt</th><th>Contents</th><th>Amazon</th><th class="n">Received</th><th>Order</th><th class="n key">Delivery / unit</th></tr></thead>
 <tbody>${[...ledger.shipments].reverse().map((s) => {
   const r = results.get(s.id);
   const diff = r.closed ? r.receivedUnits.minus(r.shippedUnits) : null;
@@ -49,7 +49,7 @@ export function shipmentForm(ctx) {
 <h1>${s ? `${s.id} · ${s.marketplace}` : 'Add a shipment'}</h1>
 ${s ? html`<p>${shipmentStatusLabel(s.status)}${s.name ? html` · “${s.name}”` : ''}</p>` : ''}
 ${batches.length
-  ? html`<div class="card scroll"><table><thead><tr><th>Product</th><th class="n">Units</th><th class="n">Product</th><th class="n">Delivery</th><th class="n">Landing</th><th>Status</th></tr></thead><tbody>${batches.map(
+  ? html`<div class="card scroll"><table><thead><tr><th>Product</th><th class="n">Units</th><th class="n">Product</th><th class="n">Delivery</th><th class="n key">Landing</th><th>Status</th></tr></thead><tbody>${batches.map(
       (b) => html`<tr><td><a href="/costs/${enc(b.shipment)}/${enc(b.product)}">${productName(ledger, b.product)}</a></td><td class="n">${units(b.units)}</td><td class="n">${unitCost(b.productCost, b.currency)}</td>
       <td class="n">${unitCost(b.deliveryCost, b.currency)}${b.deliveryBasis === 'estimated' ? '*' : ''}</td><td class="n">${unitCost(b.landingCost, b.currency)}</td><td>${badge(BATCH_STATUS[b.status])}</td></tr>`
     )}</tbody></table>

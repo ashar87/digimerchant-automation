@@ -134,12 +134,15 @@ ${esc(body)}
  * off the right of the screen.
  */
 export const APP_JS = `document.querySelectorAll('table').forEach(function (t) {
-  var heads = Array.prototype.map.call(t.querySelectorAll('thead th'), function (th) { return th.textContent.trim(); });
+  var ths = t.querySelectorAll('thead th');
+  var heads = Array.prototype.map.call(ths, function (th) { return th.textContent.trim(); });
   if (!heads.length) return;
   t.classList.add('stack');
   t.querySelectorAll('tbody tr').forEach(function (tr) {
     Array.prototype.forEach.call(tr.children, function (td, i) {
       if (!td.hasAttribute('data-label') && heads[i]) td.setAttribute('data-label', heads[i]);
+      // The column marked "key" is the figure that matters; on a phone it sits on the card's top line.
+      if (ths[i] && ths[i].classList.contains('key')) td.classList.add('key');
     });
   });
 });`;
@@ -228,6 +231,13 @@ dl.working dt{color:var(--muted)}dl.working dd{margin:0;font-variant-numeric:tab
   table.stack td:first-child{font-weight:600;white-space:normal}
   table.stack td:empty{display:none}
   table.stack tr.total{background:var(--bg)}
+  /* Card top line: what the row is (first column) on the left, its key figure on the right. */
+  table.stack:not(.rows) tr{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:12px}
+  table.stack:not(.rows) td{flex:0 0 100%}
+  table.stack:not(.rows) td:first-child{flex:1 1 0;order:-2;justify-content:flex-start;text-align:left;font-size:17px}
+  table.stack:not(.rows) td:first-child::before{content:none}
+  table.stack:not(.rows) td.key{flex:0 0 auto;width:auto;max-width:55%;text-align:right;order:-1;font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
+  table.stack:not(.rows) td.key::before{content:none}
   .card.scroll{padding:0;border:0;background:transparent}
   /* Form grids (invoice lines, payment rows): each row becomes a stack of labelled fields. */
   table.rows.stack td{display:block;text-align:left}
