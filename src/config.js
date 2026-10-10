@@ -13,12 +13,12 @@ export const config = {
   provider: (process.env.LLM_PROVIDER || 'gemini').toLowerCase(),
 
   geminiApiKey: process.env.GEMINI_API_KEY,
-  geminiModel: process.env.GEMINI_MODEL || 'gemini-3.7-flash',
+  geminiModel: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
   // Used only when a conversation carries a screenshot or PDF. Dense Seller Central
   // tables are where a Flash tier is most likely to misread a figure, and those
   // conversations are rare, so escalating them costs almost nothing.
-  geminiVisionModel: process.env.GEMINI_VISION_MODEL || process.env.GEMINI_MODEL || 'gemini-3.7-flash',
-  transcribeModel: process.env.TRANSCRIBE_MODEL || process.env.GEMINI_MODEL || 'gemini-3.7-flash',
+  geminiVisionModel: process.env.GEMINI_VISION_MODEL || process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+  transcribeModel: process.env.TRANSCRIBE_MODEL || process.env.GEMINI_MODEL || 'gemini-3.8-flash',
 
   anthropicApiKey: process.env.ANTHROPIC_API_KEY,
   anthropicModel: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5',

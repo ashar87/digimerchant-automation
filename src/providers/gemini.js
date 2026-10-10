@@ -38,7 +38,6 @@ export async function extract({ system, text, attachments = [] }) {
       systemInstruction: system,
       responseMimeType: 'application/json',
       responseSchema: geminiSchema,
-      temperature: 0,
     },
   }), { label: `gemini/${model}` });
 
@@ -55,13 +54,14 @@ export async function extract({ system, text, attachments = [] }) {
 
 /**
  * Reads a document into JSON matching `schema`. Used for supplier invoices,
- * always on the vision model and at temperature 0.
+ * always on the vision model. (Gemini 3.8 dropped the sampling settings such as
+ * temperature; the JSON schema is what keeps the output consistent.)
  */
 export async function readJson({ system, text, attachments = [], schema }) {
   const res = await withRetry(() => api().models.generateContent({
     model: config.geminiVisionModel,
     contents: [{ role: 'user', parts: [{ text }, ...attachments.map(toPart)] }],
-    config: { systemInstruction: system, responseMimeType: 'application/json', responseSchema: schema, temperature: 0 },
+    config: { systemInstruction: system, responseMimeType: 'application/json', responseSchema: schema },
   }), { label: `gemini/${config.geminiVisionModel}` });
   try {
     return { data: JSON.parse(res.text), model: config.geminiVisionModel };
@@ -93,7 +93,6 @@ export async function transcribeAudio({ mime, data }) {
         ],
       },
     ],
-    config: { temperature: 0 },
   }), { label: `transcribe/${config.transcribeModel}` });
 
   return (res.text || '').trim();
