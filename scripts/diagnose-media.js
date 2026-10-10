@@ -10,6 +10,7 @@
 import { createWhatsAppClient } from '../src/whatsapp/client.js';
 import { loadChats } from '../src/config.js';
 import { log } from '../src/logger.js';
+import { downloadByHash } from '../src/whatsapp/media.js';
 
 const chats = loadChats();
 const watched = chats.watch.map((c) => c.id);
@@ -21,7 +22,7 @@ for (const s of ['SIGINT', 'SIGTERM']) process.on(s, () => bye(0));
 
 client.on('ready', async () => {
   const report = await client.pupPage.evaluate(async (watchedIds) => {
-    const out = { modules: {}, samples: [] };
+    const out = { modules: {}, samples: [], loaded: 0 };
 
     // 1. Are the modules the library depends on still there?
     for (const name of ['WAWebDownloadManager', 'WAWebCollections']) {
@@ -40,60 +41,41 @@ client.on('ready', async () => {
       out.modules.downloadManagerKeys = `threw: ${e?.message || e}`;
     }
 
-    // 2. Find recent voice notes in the watched chats.
-    const msgs = window.require('WAWebCollections').Msg.getModelsArray()
-      .filter((m) => (m.type === 'ptt' || m.type === 'audio'))
-      .filter((m) => watchedIds.includes(m.id?.remote?._serialized ?? ''))
-      .sort((a, b) => (b.t || 0) - (a.t || 0))
-      .slice(0, 3);
-
-    const describe = (e) => {
-      if (!e) return { note: 'falsy error' };
-      const own = {};
-      for (const k of Object.getOwnPropertyNames(e)) {
-        if (k === 'stack') continue;
-        try { own[k] = typeof e[k] === 'object' ? JSON.stringify(e[k])?.slice(0, 200) : String(e[k]); } catch { own[k] = '(unreadable)'; }
-      }
-      return {
-        name: e.name, message: e.message, constructor: e.constructor?.name,
-        ownProps: own, stackHead: String(e.stack || '').split('\n').slice(0, 3).join(' | '),
-      };
+    // 2. Find recent voice notes in the watched chats. Ids no longer carry
+    // _serialized, so the chat is matched on user@server.
+    const chatOf = (m) => {
+      const r = m.id?.remote;
+      if (!r) return '';
+      if (typeof r === 'string') return r;
+      return r._serialized || (r.user && r.server ? `${r.user}@${r.server}` : String(r));
     };
-
-    for (const m of msgs) {
-      const s = {
-        id: m.id?._serialized?.slice(-24),
-        type: m.type,
-        mimetype: m.mimetype,
-        size: m.size,
+    const all = window.require('WAWebCollections').Msg.getModelsArray();
+    out.loaded = all.length;
+    out.samples = all
+      .filter((m) => m.type === 'ptt' || m.type === 'audio')
+      .filter((m) => watchedIds.includes(chatOf(m)))
+      .sort((a, b) => (b.t || 0) - (a.t || 0))
+      .slice(0, 5)
+      .map((m) => ({
+        hash: m.id?.id,
+        chat: chatOf(m).slice(-12),
         ageMinutes: m.t ? Math.round((Date.now() / 1000 - m.t) / 60) : null,
         mediaStage: m.mediaData?.mediaStage ?? '(no mediaData)',
         hasDirectPath: !!m.directPath,
         hasMediaKey: !!m.mediaKey,
-        hasEncFilehash: !!m.encFilehash,
-      };
-
-      // 3. Try the exact call whatsapp-web.js makes, catching in-page.
-      try {
-        const mockQpl = { addAnnotations() { return this; }, addPoint() { return this; } };
-        const buf = await window.require('WAWebDownloadManager').downloadManager.downloadAndMaybeDecrypt({
-          directPath: m.directPath, encFilehash: m.encFilehash, filehash: m.filehash,
-          mediaKey: m.mediaKey, mediaKeyTimestamp: m.mediaKeyTimestamp, type: m.type,
-          signal: new AbortController().signal, downloadQpl: mockQpl,
-        });
-        s.result = `OK — ${buf?.byteLength ?? '?'} bytes`;
-      } catch (e) {
-        s.result = 'THREW';
-        s.error = describe(e);
-      }
-      out.samples.push(s);
-    }
+      }));
     return out;
   }, watched);
 
+  // 3. Try each through exactly the path the service uses.
+  for (const s of report.samples) {
+    const r = await downloadByHash(client.pupPage, s.hash).catch((e) => ({ reason: 'page-error', detail: String(e?.message || e) }));
+    s.result = r?.data ? `OK — ${Buffer.byteLength(r.data, 'base64')} bytes, ${r.mimetype}` : `FAILED — ${r?.reason}: ${r?.detail}`;
+  }
+
   console.log('\n=== modules ===');
   console.log(JSON.stringify(report.modules, null, 2));
-  console.log('\n=== recent voice notes in watched chats ===');
+  console.log(`\n=== recent voice notes in watched chats (${report.loaded} messages loaded) ===`);
   if (!report.samples.length) console.log('  none found in the local message cache');
   for (const s of report.samples) console.log(JSON.stringify(s, null, 2));
   console.log();

@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { config } from '../config.js';
 import { log } from '../logger.js';
-import { withRetry } from '../providers/retry.js';
 import { downloadMediaDirect } from '../whatsapp/media.js';
 
 fs.mkdirSync(config.mediaCachePath, { recursive: true });
@@ -41,6 +40,10 @@ export function isEnabled(kind) {
  * the media is missing, too big, or a type we don't handle — a dodgy attachment
  * must not stop the rest of the conversation being processed.
  */
+// About a minute in all: 2s, 4s, 8s, 15s, 30s between attempts.
+const DOWNLOAD_WAITS_MS = [2000, 4000, 8000, 15000, 30000];
+const DOWNLOAD_ATTEMPTS = DOWNLOAD_WAITS_MS.length + 1;
+
 export async function downloadAttachment(msg, described) {
   if (!MEDIA_TYPES.includes(described.type)) return null;
 
@@ -55,35 +58,33 @@ export async function downloadAttachment(msg, described) {
   // Cheap reject before downloading, when the mime is already known.
   if (described.mime && !isEnabled(classify(described.type, described.mime))) return null;
 
+  // Media often isn't ready on the linked device the instant a message arrives:
+  // the sender's phone may still be uploading it, or WhatsApp hasn't resolved it.
+  // So keep trying for about a minute, and log WHY each attempt failed. There's
+  // no fallback to the library's own download: its message lookup is what's
+  // broken on current WhatsApp Web (see src/whatsapp/media.js).
   let media;
-  try {
-    // Media often isn't resolved on the linked device the instant the message
-    // arrives — the phone may still be re-uploading it. A couple of retries turns
-    // most of these failures into successes.
-    media = await withRetry(async () => {
-      // Direct decrypt first — the library's wrapper throws on unresolved media.
-      const direct = await downloadMediaDirect(msg).catch(() => null);
-      if (direct?.data) return direct;
-      return msg.downloadMedia();
-    }, {
-      attempts: 3,
-      baseMs: 1500,
-      always: true, // page errors carry no status or message to classify
-      label: `download ${described.type}`,
-    });
-  } catch (err) {
-    log.warn(`could not download ${described.type} from ${described.author}: ${describeError(err)}`);
-    if (described.type === 'ptt' || described.type === 'audio') {
-      log.warn('  a voice note was missed. Usual cause: your phone was offline or had not');
-      log.warn('  re-uploaded the media yet. Linked devices cannot fetch media on their own.');
+  let last = null;
+  for (let attempt = 1; attempt <= DOWNLOAD_ATTEMPTS; attempt++) {
+    const r = await downloadMediaDirect(msg);
+    if (r?.data) {
+      media = r;
+      if (attempt > 1) log.info(`downloaded ${described.type} from ${described.author} on attempt ${attempt}`);
+      break;
     }
-    return null;
+    last = r;
+    if (attempt < DOWNLOAD_ATTEMPTS) {
+      const wait = DOWNLOAD_WAITS_MS[attempt - 1];
+      log.warn(`download ${described.type}: ${r?.reason} (${r?.detail}) — retrying in ${Math.round(wait / 1000)}s (attempt ${attempt + 1}/${DOWNLOAD_ATTEMPTS})`);
+      await new Promise((res) => setTimeout(res, wait));
+    }
   }
-
-  // downloadMedia resolves to undefined (rather than throwing) when WhatsApp
-  // reports the media as expired, still fetching, or in an error state.
-  if (!media?.data) {
-    log.warn(`${described.type} from ${described.author} is not available on this device (expired or still uploading)`);
+  if (!media) {
+    log.warn(`could not download ${described.type} from ${described.author}: ${last?.reason} (${last?.detail})`);
+    if (described.type === 'ptt' || described.type === 'audio') {
+      log.warn('  a voice note was missed. If the reason is not-ready or no-media-path, the sender’s phone');
+      log.warn('  probably hadn’t finished uploading it; anything else is worth reporting.');
+    }
     return null;
   }
 
@@ -111,34 +112,6 @@ export function cacheToDisk(attachment, id) {
   const file = path.join(config.mediaCachePath, `${id.replace(/[^\w-]/g, '_')}.${ext}`);
   fs.writeFileSync(file, Buffer.from(attachment.data, 'base64'));
   return file;
-}
-
-/**
- * Errors thrown inside the browser page lose their message when they cross the
- * Puppeteer boundary, so `err.message` alone is often an empty string. Pull out
- * whatever identifying detail survived.
- */
-function describeError(err) {
-  const parts = [
-    err?.name && err.name !== 'Error' ? err.name : null,
-    err?.status ? `status ${err.status}` : null,
-    err?.code || null,
-    err?.message || null,
-  ].filter(Boolean);
-
-  if (parts.length) return parts.join(' · ');
-
-  const str = String(err);
-  if (str && str !== '[object Object]' && str !== 'Error') return str;
-
-  const firstStackLine = String(err?.stack || '').split('\n')[0];
-  if (firstStackLine) return firstStackLine;
-
-  try {
-    return JSON.stringify(err) || '(no detail available)';
-  } catch {
-    return '(no detail available)';
-  }
 }
 
 function extensionFor(mime) {
