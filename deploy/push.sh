@@ -9,7 +9,8 @@
 # and give you 'ubuntu' or 'opc' instead.
 #
 # Sends .env and config/chats.json too — they are gitignored, so they are not on
-# GitHub and this is how they reach the server.
+# GitHub and this is how they reach the server. .env is merged, not replaced: a
+# key set only on the server (a secret put there with set-secret.sh) is kept.
 set -euo pipefail
 
 TARGET="${1:-}"
@@ -41,8 +42,14 @@ ssh $SSH_T "$TARGET" "SUDO=\$(if [ \$(id -u) -eq 0 ]; then echo ''; else echo su
 echo "==> Copying code, .env and config/chats.json"
 rsync -az --delete \
   --exclude node_modules --exclude data --exclude '.git' \
-  --exclude '*.log' --exclude '.wwebjs_*' --exclude private --exclude .claude \
+  --exclude '*.log' --exclude '.wwebjs_*' --exclude private --exclude .claude --exclude .env \
   ./ "$TARGET:/opt/digimerchant/"
+
+echo "==> Merging .env (keys set only on the server are kept)"
+ssh -T "$TARGET" 'umask 077 && cat > "$HOME/.env.push"' < .env
+ssh $SSH_T "$TARGET" "SUDO=\$(if [ \$(id -u) -eq 0 ]; then echo ''; else echo sudo; fi); \
+  \$SUDO sh -c 'umask 077; f=/opt/digimerchant/.env; touch \"\$f\"; awk -f /opt/digimerchant/deploy/env-merge.awk \"\$f\" \"\$0\" > \"\$f.new\" && mv \"\$f.new\" \"\$f\" && { chown digimerchant:digimerchant \"\$f\" 2>/dev/null || true; }' \"\$HOME/.env.push\"; \
+  rc=\$?; rm -f \"\$HOME/.env.push\"; exit \$rc"
 
 if [ "$CODE_ONLY" = "--code" ]; then
   echo "==> Reinstalling dependencies and restarting"
