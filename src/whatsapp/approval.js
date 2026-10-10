@@ -2,25 +2,72 @@ import { config } from '../config.js';
 import { log } from '../logger.js';
 import * as store from '../store/db.js';
 import { createTask, ensureSelectOption } from '../tasks/notion.js';
-import { messageKey } from './ids.js';
+import { messageKey, widString } from './ids.js';
 import { shortDate } from '../util/time.js';
 
 /** IDs of messages this bot sent. They come back through message_create as fromMe. */
 const sentByBot = new Set();
 
 export function createApprovalFlow(client) {
-  /** The "Message yourself" chat — where every approval card lands. */
-  const selfChatId = () => client.info.wid._serialized;
+  /**
+   * The "Message yourself" chat, where every approval card lands. WhatsApp now
+   * addresses it by a LID (…@lid) as well as by phone number (…@c.us), and
+   * incoming messages carry the LID, so both count as the self-chat. Sending
+   * still goes to the phone-number address, which WhatsApp resolves.
+   */
+  const selfIds = new Set();
+  const selfChatId = () => widString(client.info.wid);
+  const isSelfChat = (chatId) => chatId === selfChatId() || selfIds.has(chatId);
+
+  /** Call once on ready: learns the self-chat's LID. */
+  async function init() {
+    selfIds.add(selfChatId());
+    try {
+      const lid = await client.pupPage.evaluate(() => {
+        const u = window.require('WAWebUserPrefsMeUser').getMaybeMeLidUser?.();
+        return u ? u._serialized || `${u.user}@${u.server}` : null;
+      });
+      if (lid) selfIds.add(lid);
+    } catch (err) {
+      log.warn(`could not look up the self-chat's LID: ${err.message}`);
+    }
+    log.info(`self-chat: ${[...selfIds].join(' / ')}`);
+  }
+
+  /**
+   * client.sendMessage() now resolves to undefined even though the message is
+   * sent, so the sent message's id comes from its echo (message_create) instead.
+   * That id is what lets a quoted reply be matched to its card.
+   */
+  const awaitingEcho = new Map(); // text -> resolve(id)
+  function noteEcho(described) {
+    const resolve = awaitingEcho.get(described.body);
+    if (!resolve) return false;
+    awaitingEcho.delete(described.body);
+    resolve(described.id);
+    return true;
+  }
 
   async function send(text) {
     if (config.dryRun) {
       log.warn('DRY_RUN: would send to self chat:\n' + text);
       return null;
     }
+    const body = text.trim();
+    const echo = new Promise((resolve) => {
+      awaitingEcho.set(body, resolve);
+      setTimeout(() => {
+        if (awaitingEcho.get(body) === resolve) {
+          awaitingEcho.delete(body);
+          resolve(null);
+        }
+      }, 20_000);
+    });
     const msg = await client.sendMessage(selfChatId(), text);
-    const key = messageKey(msg.id);
+    const key = messageKey(msg?.id) || (await echo);
     if (key) sentByBot.add(key);
-    return msg;
+    else log.warn('sent a message to the self-chat but could not learn its id; replies to it must quote the ref (e.g. Y A20)');
+    return { key };
   }
 
   /** Sends one approval card and remembers which candidate it belongs to. */
@@ -43,8 +90,8 @@ export function createApprovalFlow(client) {
       .filter((l) => l !== null)
       .join('\n');
 
-    const msg = await send(text);
-    if (msg) store.attachApprovalMessage(candidate.ref, messageKey(msg.id));
+    const sent = await send(text);
+    if (sent?.key) store.attachApprovalMessage(candidate.ref, sent.key);
     log.info(`asked for approval [${candidate.ref}] ${candidate.title}`);
   }
 
@@ -53,6 +100,7 @@ export function createApprovalFlow(client) {
    * command we understood (so the caller knows not to process it further).
    */
   async function handleReply(msg, described) {
+    if (noteEcho(described)) return true; // our own message echoing back, id now known
     if (sentByBot.has(described.id)) return true; // our own card echoing back
     const body = described.body.trim();
     if (!body) return false;
@@ -156,7 +204,7 @@ export function createApprovalFlow(client) {
     return send([`📋 *${pending.length} awaiting your call*`, '', ...lines, '', 'Reply *Y <ref>* / *N <ref>*, or *Y all*.'].join('\n'));
   }
 
-  return { sendCard, handleReply, sendPendingList, send, selfChatId, sentByBot };
+  return { init, sendCard, handleReply, sendPendingList, send, selfChatId, isSelfChat, sentByBot };
 }
 
 const BOT_PREFIXES = ['🔔', '📋', '✅', '🗑️', '⚠️', '✨', '*Commands*', "Didn't catch that"];

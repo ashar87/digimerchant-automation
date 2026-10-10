@@ -62,7 +62,7 @@ client.on('message_create', async (msg) => {
     const m = await describeMessage(msg);
 
     // Your own self-chat is the control channel, never a source of tasks.
-    if (m.chatId === approval.selfChatId()) {
+    if (approval.isSelfChat(m.chatId)) {
       await approval.handleReply(msg, m);
       return;
     }
@@ -149,6 +149,7 @@ const readyTimer = setTimeout(() => {
 client.on('ready', async () => {
   isReady = true;
   clearTimeout(readyTimer);
+  await approval.init();
   log.ok(`connected as ${client.info.pushname} (${client.info.wid.user})`);
   log.info(`watching ${chats.watch.length} chat(s):`);
   for (const c of chats.watch) log.info(`   • ${c.label}`);
