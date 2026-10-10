@@ -68,7 +68,14 @@ client.on('message_create', async (msg) => {
     }
 
     const watched = chats.byId.get(m.chatId);
-    if (!watched) return;                       // <- the allowlist. Everything else is invisible.
+    if (!watched) {
+      // A command you typed that didn't land in the recognised self-chat would
+      // otherwise vanish without trace. Log where it went (chat id only, no content).
+      if (m.fromMe && /^(y|n|e|yes|no|pending|help)\b/i.test(m.body || '')) {
+        log.warn(`a command-like message from you arrived in ${m.chatId}, which isn't recognised as your self-chat (${[...approval.selfIds()].join(' / ')}); ignored`);
+      }
+      return;                                   // <- the allowlist. Everything else is invisible.
+    }
     if (m.timestamp < startedAt) return;        // don't replay history on first boot
     if (store.alreadySeen(m.id)) return;
     store.markSeen(m.id);

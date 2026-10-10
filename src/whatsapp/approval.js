@@ -107,6 +107,7 @@ export function createApprovalFlow(client) {
     // Belt and braces: message_create can fire for a card before sendMessage
     // resolves, so also recognise our own output by its shape.
     if (BOT_PREFIXES.some((p) => body.startsWith(p))) return true;
+    log.info(`self-chat: "${body.slice(0, 40)}"${described.hasQuotedMsg ? ' (a reply to a card)' : ''}`);
 
     // 1. Reply-to-card form: quote the card and just say Y / N / E <title>
     if (described.hasQuotedMsg) {
@@ -204,7 +205,7 @@ export function createApprovalFlow(client) {
     return send([`📋 *${pending.length} awaiting your call*`, '', ...lines, '', 'Reply *Y <ref>* / *N <ref>*, or *Y all*.'].join('\n'));
   }
 
-  return { init, sendCard, handleReply, sendPendingList, send, selfChatId, isSelfChat, sentByBot };
+  return { init, sendCard, handleReply, sendPendingList, send, selfChatId, isSelfChat, selfIds: () => selfIds, sentByBot };
 }
 
 const BOT_PREFIXES = ['🔔', '📋', '✅', '🗑️', '⚠️', '✨', '*Commands*', "Didn't catch that"];
