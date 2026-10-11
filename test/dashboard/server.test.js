@@ -49,7 +49,7 @@ test('asks who you are before anything else, and remembers it', async () => {
 });
 
 test('every page renders', async () => {
-  for (const path of ['/', '/orders', '/orders/PO-001', '/payments', '/payments/new', '/payments/P-1', '/shipments', '/shipments/new', '/shipments/FBA1TEST', '/bills', '/costs', '/costs/FBA1TEST/A-UK', '/products', '/products/A-UK', '/annie', '/settings', '/orders/PO-001/invoices/PO-001-final']) {
+  for (const path of ['/', '/orders', '/orders/PO-001', '/payments', '/payments/new', '/payments/P-1', '/shipments', '/shipments/new', '/shipments/FBA1TEST', '/bills', '/costs', '/costs/FBA1TEST/A-UK', '/products', '/products/A-UK', '/settings', '/orders/PO-001/invoices/PO-001-final']) {
     const r = await get(path);
     assert.equal(r.status, 200, path);
   }

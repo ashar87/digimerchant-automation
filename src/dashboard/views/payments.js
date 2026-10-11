@@ -1,4 +1,5 @@
 import { html, select, money } from '../html.js';
+import { annieSection } from './annie.js';
 import { documentsSection } from './files.js';
 import { saveLedger, deleteRecord } from '../../landing/store.js';
 import { computeLandingCosts } from '../../landing/engine.js';
@@ -32,6 +33,7 @@ export function paymentsPage(ctx) {
 <h1>Payments</h1>
 <p class="sub">Every Wise transfer, its rate, and what it paid for. The PO goes in the Wise reference.</p>
 <p><a class="button" href="/payments/new">Record a payment</a> <a href="/wise" style="margin-left:10px">From Wise</a></p>
+${annieSection(ledger)}
 <div class="card scroll"><table>
 <thead><tr><th>Date</th><th>Payment</th><th>Reference</th><th class="n key">USD</th><th class="n">GBP / EUR</th><th class="n">QB rate</th><th>Paid for</th></tr></thead>
 <tbody>${[...ledger.payments].reverse().map((p) => html`<tr><td>${p.date}</td><td><a href="/payments/${enc(p.id)}">${p.id}</a></td><td>${p.reference || ''}</td>
