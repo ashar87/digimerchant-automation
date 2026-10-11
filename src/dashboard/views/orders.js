@@ -252,7 +252,7 @@ ${(order.writeOffs || []).length ? html`<ul>${order.writeOffs.map((w) => html`<l
 <form class="card" method="post" action="/orders/${enc(order.po)}/write-offs">${versionField(order)}<div class="grid">
 <div><label>Product</label>${select('product', r.lines.map((l) => ({ value: l.product, label: productName(ledger, l.product) })), null)}</div>
 <div><label>Units</label><input name="qty" inputmode="decimal" required></div>
-<div><label>Reason</label><input name="reason"></div></div><button class="ghost">Write off</button></form>
+<div><label>Reason (required)</label><input name="reason" required></div></div><button class="ghost">Write off</button></form>
 
 ${history(ctx, 'order', order.po)}`;
   return { title: order.po, body };
@@ -302,17 +302,17 @@ ${!inv?.id && order.invoices?.length
   : ''}
 <div class="grid">
   <div><label>Type</label>${select('kind', [{ value: 'proforma', label: 'Proforma' }, { value: 'final', label: 'Final invoice' }], inv?.kind || (order.invoices?.length ? 'final' : 'proforma'))}</div>
-  <div><label>Date</label><input type="date" name="date" value="${inv?.date || ''}"></div>
+  <div><label>Date (required)</label><input type="date" name="date" value="${inv?.date || ''}" required></div>
   <div><label>Supplier’s invoice no.</label><input name="supplierRef" value="${inv?.supplierRef || ''}"></div>
-  <div><label>Total on the invoice (RMB)</label><input name="statedTotalRmb" inputmode="decimal" value="${inv?.statedTotalRmb || ''}"></div>
+  <div><label>Total on the invoice, RMB (required)</label><input name="statedTotalRmb" inputmode="decimal" value="${inv?.statedTotalRmb || ''}" required></div>
   <div><label>Supplier, if not ${order.supplier || 'the PO’s'}</label><input name="invoiceSupplier" value="${inv?.supplier || ''}"></div>
 </div>
-<div class="scroll"><table class="rows"><thead><tr><th>Kind</th><th>Product</th><th>Qty</th><th>RMB</th><th>Description / category</th></tr></thead><tbody>
-${lines.map((l) => html`<tr><td>${select('line_kind', LINE_KINDS, l.kind || 'goods')}</td><td>${select('line_product', products, l.product, { blank: true })}</td>
-<td><input name="line_qty" inputmode="decimal" value="${l.qty || ''}"></td><td><input name="line_rmb" inputmode="decimal" value="${l.rmb || ''}"></td>
-<td><input name="line_description" value="${l.description || l.category || ''}"></td></tr>`)}
+<div class="scroll"><table class="rows" data-need-first><thead><tr><th>Kind</th><th>Product</th><th>Qty</th><th>RMB</th><th>Description / category</th></tr></thead><tbody>
+${lines.map((l) => html`<tr><td>${select('line_kind', LINE_KINDS, l.kind || 'goods')}</td><td>${select('line_product', products, l.product, { blank: true, attrs: 'data-need="goods"' })}</td>
+<td><input name="line_qty" inputmode="decimal" value="${l.qty || ''}" data-need="goods"></td><td><input name="line_rmb" inputmode="decimal" value="${l.rmb || ''}" data-need="any"></td>
+<td><input name="line_description" value="${l.description || l.category || ''}" data-need="adjustment expense"></td></tr>`)}
 </tbody></table></div>
-<p class="muted small">Labour with a product is that product’s own cost; without one it’s shared by RMB share, as are fees and adjustments. Expenses (packing bags, samples, R&amp;D) stay out of landing cost — put the category in the description.</p>
+<p class="muted small"><b>Required on each line you use:</b> the RMB; for goods, the product and quantity; for an adjustment or expense, what it is. Labour with a product is that product’s own cost; without one it’s shared by RMB share, as are fees and adjustments. Expenses (packing bags, samples, R&amp;D) stay out of landing cost — put the category in the description.</p>
 <button>${submit || (inv ? 'Save invoice' : 'Add invoice')}</button></form>`;
 }
 
@@ -337,7 +337,7 @@ export function saveInvoice(ctx) {
 /** An invoice from the invoice form (used by order pages and the invoice-upload review). */
 export function invoiceFromForm(f, order, ledger, existingId = null, extra = {}) {
   const kind = text(f, 'kind') === 'final' ? 'final' : 'proforma';
-  const invDate = date(f.get('date'), 'Invoice date');
+  const invDate = date(f.get('date'), 'Invoice date', { required: true });
   const productIds = new Set(ledger.products.map((p) => p.id));
 
   const lines = rows(f, 'line', ['kind', 'product', 'qty', 'rmb', 'description'], ['product', 'qty', 'rmb', 'description']).map((l, i) => {
@@ -345,6 +345,8 @@ export function invoiceFromForm(f, order, ledger, existingId = null, extra = {})
     if (l.product && !productIds.has(l.product)) throw new HttpError(400, `${where}: unknown product`);
     if (l.kind === 'goods' && !l.product) throw new HttpError(400, `${where}: goods need a product`);
     if (l.kind === 'goods' && !l.qty) throw new HttpError(400, `${where}: goods need a quantity`);
+    if (!l.rmb) throw new HttpError(400, `${where}: enter its RMB amount`);
+    if ((l.kind === 'adjustment' || l.kind === 'expense') && !l.description) throw new HttpError(400, `${where}: say what the ${l.kind} is`);
     const line = compact({ kind: l.kind, product: l.product || undefined, qty: number(l.qty, `${where} qty`), rmb: number(l.rmb, `${where} RMB`) });
     if (l.description) line[l.kind === 'expense' ? 'category' : 'description'] = l.description;
     return line;
@@ -369,7 +371,7 @@ export function invoiceFromForm(f, order, ledger, existingId = null, extra = {})
     else throw new HttpError(400, 'That invoice is no longer on this PO. Reload and choose again.');
   }
 
-  const invoice = compact({ id, kind, date: invDate, supplierRef: text(f, 'supplierRef'), supplier: text(f, 'invoiceSupplier'), statedTotalRmb: number(f.get('statedTotalRmb'), 'Invoice total'), filePath: previous?.filePath, series, ...extra });
+  const invoice = compact({ id, kind, date: invDate, supplierRef: text(f, 'supplierRef'), supplier: text(f, 'invoiceSupplier'), statedTotalRmb: required(number(f.get('statedTotalRmb'), 'Invoice total'), 'Total on the invoice'), filePath: previous?.filePath, series, ...extra });
   invoice.lines = lines;
   return invoice;
 }
@@ -400,7 +402,7 @@ export function addWriteOff(ctx) {
   const f = ctx.form;
   const product = required(text(f, 'product'), 'Product');
   const qty = required(number(f.get('qty'), 'Units'), 'Units');
-  order.writeOffs = [...(order.writeOffs || []), compact({ product, qty, reason: text(f, 'reason'), date: new Date().toISOString().slice(0, 10) })];
+  order.writeOffs = [...(order.writeOffs || []), compact({ product, qty, reason: required(text(f, 'reason'), 'Reason'), date: new Date().toISOString().slice(0, 10) })];
   saveLedger(ctx.db, { orders: [order] }, { actor: ctx.actor });
   return { redirect: `/orders/${enc(order.po)}?ok=Written+off.` };
 }

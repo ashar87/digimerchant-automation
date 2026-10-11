@@ -149,6 +149,60 @@ export const APP_JS = `document.querySelectorAll('table').forEach(function (t) {
       if (ths[i] && ths[i].classList.contains('key')) td.classList.add('key');
     });
   });
+});
+
+/* Required fields that depend on the row: a field marked data-need="goods" is
+   required on any row in use whose kind/type is goods ("any" = every row in use).
+   With data-need-first on the table, the first row counts as in use, so a form
+   can't be saved with nothing in it. The server checks the same rules. */
+document.querySelectorAll('table.rows').forEach(function (t) {
+  var first = t.hasAttribute('data-need-first');
+  function sync() {
+    Array.prototype.forEach.call(t.querySelectorAll('tbody tr'), function (tr, i) {
+      var typeEl = tr.querySelector('select[name$="_type"], select[name$="_kind"]');
+      var type = typeEl ? typeEl.value : '';
+      var used = (first && i === 0) || Array.prototype.some.call(tr.querySelectorAll('input, select'), function (el) {
+        return el !== typeEl && el.value.trim() !== '';
+      });
+      Array.prototype.forEach.call(tr.querySelectorAll('[data-need]'), function (el) {
+        var need = el.getAttribute('data-need').split(' ');
+        el.required = used && (need.indexOf('any') >= 0 || need.indexOf(type) >= 0);
+      });
+    });
+  }
+  t.addEventListener('input', sync);
+  t.addEventListener('change', sync);
+  sync();
+});
+
+/* "At least one of these" (the amount sent: USD, GBP or EUR), and the QB rate a
+   UK or DE order needs when it was paid from USD or EUR. */
+document.querySelectorAll('form').forEach(function (form) {
+  var group = form.querySelectorAll('[data-one-of]');
+  var rate = form.querySelector('[name=qbRate]');
+  var gbpPos = (form.getAttribute('data-gbp-pos') || '').split(' ').filter(Boolean);
+  if (!group.length && !rate) return;
+  function val(name) {
+    var el = form.querySelector('[name=' + name + ']');
+    return el ? el.value.trim() : '';
+  }
+  function check() {
+    if (group.length) {
+      var any = Array.prototype.some.call(group, function (el) { return el.value.trim() !== ''; });
+      group[0].setCustomValidity(any ? '' : 'Enter the amount sent: USD, GBP or EUR.');
+    }
+    if (rate && gbpPos.length) {
+      var paysGbpOrder = Array.prototype.some.call(form.querySelectorAll('tbody tr'), function (tr) {
+        var type = tr.querySelector('[name=alloc_type]');
+        var target = tr.querySelector('[name=alloc_target]');
+        return type && type.value === 'order' && target && gbpPos.indexOf(target.value.trim().toUpperCase()) >= 0;
+      });
+      rate.required = paysGbpOrder && !val('gbp') && (val('usd') !== '' || val('eur') !== '');
+    }
+  }
+  form.addEventListener('input', check);
+  form.addEventListener('change', check);
+  check();
 });`;
 
 const CSS = `

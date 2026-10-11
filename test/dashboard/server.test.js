@@ -77,7 +77,7 @@ test('a new order, its invoice and its payment produce a cost, all audited', asy
   assert.equal(inv.status, 303);
   const pay = await post('/payments', {
     date: '2026-03-02', reference: 'PO-002 full', usd: '400', qbRate: '0.75',
-    alloc_type: ['order', 'order'], alloc_target: ['PO-002', ''], alloc_part: ['full', ''], alloc_usd: ['400', ''], alloc_rmb: ['', ''], alloc_description: ['', ''],
+    alloc_type: ['order', 'order'], alloc_target: ['PO-002', ''], alloc_part: ['full', ''], alloc_usd: ['400', ''], alloc_rmb: ['2000', ''], alloc_description: ['', ''],
   });
   assert.equal(pay.status, 303);
 
@@ -99,10 +99,19 @@ test('linking a shipment line to an order by hand', async () => {
 });
 
 test('bad input is refused with a reason, and nothing is written', async () => {
-  const r = await post('/payments', { date: '2026-03-02', usd: 'abc', alloc_type: 'order', alloc_target: 'PO-002' });
+  const r = await post('/payments', { date: '2026-03-02', reference: 'PO-002', usd: 'abc', alloc_type: 'order', alloc_target: 'PO-002', alloc_part: 'full', alloc_rmb: '100' });
   assert.equal(r.status, 400);
   assert.match(await r.text(), /USD isn&#39;t a number/);
-  assert.equal((await post('/payments', { date: '2026-03-03', usd: '5', alloc_type: 'order', alloc_target: 'PO-999' })).status, 400);
+  assert.equal((await post('/payments', { date: '2026-03-03', reference: 'x', usd: '5', alloc_type: 'order', alloc_target: 'PO-999', alloc_part: 'full', alloc_rmb: '5' })).status, 400);
+  // Fields the costs and reconciliation depend on can't be left out.
+  const needs = async (fields, why) => {
+    const res = await post('/payments', { date: '2026-03-03', reference: 'PO-002', usd: '5', alloc_type: 'order', alloc_target: 'PO-002', alloc_part: 'full', alloc_rmb: '5', ...fields });
+    assert.equal(res.status, 400);
+    assert.match(await res.text(), why);
+  };
+  await needs({ reference: '' }, /Wise reference is required/);
+  await needs({ alloc_part: '' }, /choose the part: Deposit, Balance or Full payment/);
+  await needs({ alloc_rmb: '' }, /enter the RMB the invoice asks for/);
   assert.equal((await post('/orders', { po: 'PO-002', supplier: 'Dup', marketplace: 'UK' })).status, 400);
 });
 
@@ -142,7 +151,7 @@ test('a save made on a page opened before someone else’s save is refused, and 
 test('a stale delete is refused too, and a form with no version is refused', async () => {
   const payment = () => loadLedger(db).payments.find((p) => p.id === 'P-1');
   const stale = versionOf(payment());
-  const fields = { date: '2026-01-15', gbp: '210', alloc_type: 'order', alloc_target: 'PO-001', alloc_part: 'full', alloc_usd: '', alloc_rmb: '', alloc_description: '' };
+  const fields = { date: '2026-01-15', reference: 'PO-001', gbp: '210', alloc_type: 'order', alloc_target: 'PO-001', alloc_part: 'full', alloc_usd: '', alloc_rmb: '1000', alloc_description: '' };
   assert.equal((await post('/payments/P-1', { ...fields, version: stale }, { actor: 'Atif' })).status, 303);
   assert.equal((await post('/payments/P-1/delete', { version: stale })).status, 409);
   assert.ok(payment());
@@ -151,23 +160,23 @@ test('a stale delete is refused too, and a form with no version is refused', asy
 });
 
 test('a payment covering several invoices needs every invoice amount, all USD or all RMB', async () => {
-  const base = { date: '2026-04-01', gbp: '300', alloc_part: ['deposit', 'deposit'], alloc_description: ['', ''] };
-  const missing = await post('/payments', { ...base, alloc_type: ['order', 'order'], alloc_target: ['PO-001', 'PO-002'], alloc_usd: ['250', ''], alloc_rmb: ['', ''] });
+  const base = { date: '2026-04-01', reference: 'PO-001 PO-002', gbp: '300', alloc_part: ['deposit', 'deposit'], alloc_description: ['', ''] };
+  // An order row always has its RMB; a second row with neither amount can't be split against it.
+  const missing = await post('/payments', { ...base, alloc_type: ['order', 'expense'], alloc_target: ['PO-001', 'Advertising'], alloc_usd: ['250', ''], alloc_rmb: ['1200', ''] });
   assert.equal(missing.status, 400);
   assert.match(await missing.text(), /pays 2 things.*all in USD, or all in RMB/s);
 
-  const mixed = await post('/payments', { ...base, alloc_type: ['order', 'order'], alloc_target: ['PO-001', 'PO-002'], alloc_usd: ['250', ''], alloc_rmb: ['', '1800'] });
-  assert.equal(mixed.status, 400);
+  const noRmb = await post('/payments', { ...base, alloc_type: ['order', 'order'], alloc_target: ['PO-001', 'PO-002'], alloc_usd: ['250', '300'], alloc_rmb: ['1200', ''] });
+  assert.equal(noRmb.status, 400);
 
   const rmb = await post('/payments', { ...base, alloc_type: ['order', 'order'], alloc_target: ['PO-001', 'PO-002'], alloc_usd: ['', ''], alloc_rmb: ['1200', '1800'] });
   assert.equal(rmb.status, 303);
-  const usd = await post('/payments', { ...base, date: '2026-04-02', alloc_type: ['order', 'expense'], alloc_target: ['PO-001', 'Advertising'], alloc_usd: ['250', '150'], alloc_rmb: ['', ''] });
+  const usd = await post('/payments', { ...base, date: '2026-04-02', alloc_type: ['order', 'expense'], alloc_target: ['PO-001', 'Advertising'], alloc_usd: ['250', '150'], alloc_rmb: ['1200', ''] });
   assert.equal(usd.status, 303);
-  assert.match(decodeURIComponent(usd.headers.get('location')), /Tip: add the RMB the invoice states for PO-001/);
 });
 
 test('a UK payment from the USD balance needs the QB rate when QuickBooks isn’t connected', async () => {
-  const fields = { date: '2026-04-03', usd: '100', alloc_type: 'order', alloc_target: 'PO-001', alloc_part: 'balance', alloc_usd: '100', alloc_rmb: '', alloc_description: '' };
+  const fields = { date: '2026-04-03', reference: 'PO-001 balance', usd: '100', alloc_type: 'order', alloc_target: 'PO-001', alloc_part: 'balance', alloc_usd: '100', alloc_rmb: '700', alloc_description: '' };
   const r = await post('/payments', fields);
   assert.equal(r.status, 400);
   assert.match(await r.text(), /needs the QB rate for 2026-04-03 \(GBP per USD\)/);
@@ -178,7 +187,7 @@ test('a UK payment from the USD balance needs the QB rate when QuickBooks isn’
 
 test('a second invoice on a PO must say whether it replaces one or adds to them', async () => {
   await post('/orders', { po: 'PO-010', supplier: 'Agent', marketplace: 'UK' });
-  const add = (fields) => post('/orders/PO-010/invoices', { version: orderVersion('PO-010'), date: '2026-05-01', line_kind: 'goods', line_product: 'A-UK', line_description: '', ...fields });
+  const add = (fields) => post('/orders/PO-010/invoices', { version: orderVersion('PO-010'), date: '2026-05-01', line_kind: 'goods', line_product: 'A-UK', line_description: '', statedTotalRmb: fields.line_rmb, ...fields });
   assert.equal((await add({ kind: 'proforma', line_qty: '100', line_rmb: '1000' })).status, 303);
 
   const unsaid = await add({ kind: 'final', line_qty: '100', line_rmb: '1100' });

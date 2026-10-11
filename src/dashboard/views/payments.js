@@ -89,29 +89,30 @@ export function paymentForm(ctx) {
 ${fromWise ? html`<p class="notice">Filled in from the Wise transfer of ${fromWise.date}${fromWise.reference ? ` (“${fromWise.reference}”)` : ''}. Check the amounts against Wise and say what it paid for.</p>` : ''}
 ${p?.id ? rateStatus(ctx, p) : ''}
 ${quick ? html`<p class="notice">${{ deposit: 'Deposit', balance: 'Balance', full: 'Full payment' }[quick.part]} for <a href="/orders/${enc(preset)}">${preset}</a>${quick.rmb ? html`: ${Number(quick.rmb).toLocaleString('en-GB')} RMB${quick.part === 'deposit' ? ' (30% of the invoice)' : quick.part === 'balance' ? ' (what’s still unpaid)' : ' (the whole invoice)'} is filled in. Change it if the supplier asked for a different amount, then add what you sent.` : html`. The invoice total isn’t known yet, so fill in the amount the supplier asked for.`}</p>` : ''}
-<form class="card" method="post" action="/payments${p?.id ? `/${enc(p.id)}` : ''}">
+<form class="card" method="post" action="/payments${p?.id ? `/${enc(p.id)}` : ''}" data-payment data-gbp-pos="${ledger.orders.filter((o) => o.marketplace !== 'US').map((o) => o.po).join(' ')}">
 ${fromWise ? html`<input type="hidden" name="wise" value="${fromWise.wise}">` : ''}
 ${p?.id ? versionField(p) : ''}
 <div class="grid">
   <div><label>Date (required)</label><input type="date" name="date" value="${p?.date || ''}" required></div>
-  <div><label>Wise reference</label><input name="reference" value="${p?.reference || ''}" placeholder="PO-020 30%"></div>
-  <div><label>USD sent</label><input name="usd" inputmode="decimal" value="${p?.usd || ''}"></div>
-  <div><label>GBP actually paid</label><input name="gbp" inputmode="decimal" value="${p?.gbp || ''}"></div>
-  <div><label>EUR sent</label><input name="eur" inputmode="decimal" value="${p?.eur || ''}"></div>
-  <div><label>QB rate (GBP per USD or EUR)</label><input name="qbRate" inputmode="decimal" value="${p?.qbRate || ''}"></div>
+  <div><label>Wise reference (required)</label><input name="reference" value="${p?.reference || ''}" placeholder="PO-020 30%" required></div>
+  <div><label>USD sent</label><input name="usd" inputmode="decimal" data-one-of="sent" value="${p?.usd || ''}"></div>
+  <div><label>GBP actually paid</label><input name="gbp" inputmode="decimal" data-one-of="sent" value="${p?.gbp || ''}"></div>
+  <div><label>EUR sent</label><input name="eur" inputmode="decimal" data-one-of="sent" value="${p?.eur || ''}"></div>
+  <div><label>QB rate (GBP per USD or EUR; required for UK/DE orders paid from USD or EUR)</label><input name="qbRate" inputmode="decimal" value="${p?.qbRate || ''}"></div>
   <div><label>Wise fee (expense)</label><input name="fee" inputmode="decimal" value="${p?.fee || ''}"></div>
   <div><label>Funded from</label><input name="funding" value="${p?.funding || ''}" placeholder="USD balance / GBP / EUR"></div>
 </div>
 <p class="muted small">UK and DE are costed in GBP: the GBP actually paid if you paid in GBP, otherwise USD or EUR × the QB rate on this date. The US is costed in the USD sent.</p>
 <h3>What it paid for</h3>
-<div class="scroll"><table class="rows"><thead><tr><th>Type</th><th>PO / bill / category</th><th>Part</th><th>Invoice amount, USD</th><th>Invoice amount, RMB</th><th>Note</th></tr></thead><tbody>
+<p class="muted small">Enter at least one amount sent: USD, GBP or EUR.</p>
+<div class="scroll"><table class="rows" data-need-first><thead><tr><th>Type</th><th>PO / bill / category</th><th>Part</th><th>Invoice amount, USD</th><th>Invoice amount, RMB</th><th>Note</th></tr></thead><tbody>
 ${allocations.map((a) => html`<tr><td>${select('alloc_type', TYPES, a.type || 'order')}</td>
-<td><input name="alloc_target" list="targets" value="${a.target || ''}"></td><td>${select('alloc_part', PARTS, a.part || '')}</td>
-<td><input name="alloc_usd" inputmode="decimal" value="${a.usd || ''}"></td><td><input name="alloc_rmb" inputmode="decimal" value="${a.rmb || ''}"></td>
+<td><input name="alloc_target" list="targets" value="${a.target || ''}" data-need="order bill"></td><td>${select('alloc_part', PARTS, a.part || '', { attrs: 'data-need="order"' })}</td>
+<td><input name="alloc_usd" inputmode="decimal" value="${a.usd || ''}"></td><td><input name="alloc_rmb" inputmode="decimal" value="${a.rmb || ''}" data-need="order"></td>
 <td><input name="alloc_description" value="${a.description || ''}"></td></tr>`)}
 </tbody></table></div>
 <datalist id="targets">${targets.map((t) => html`<option value="${t}">`)}</datalist>
-<p class="muted small">The amount each invoice asks for, not what you sent. When one transfer pays several invoices it’s split by these, so fill in every row: all in USD, or all in RMB if paid straight to RMB. Adding the RMB as well lets an order be confirmed fully paid.</p>
+<p class="muted small"><b>Required on each row you use:</b> for an order, the PO, the part and the RMB the invoice asks for; for a courier bill, the bill. The amount each invoice asks for, not what you sent. When one transfer pays several invoices it’s split by these, so fill in every row: all in USD, or all in RMB if paid straight to RMB. Adding the RMB as well lets an order be confirmed fully paid.</p>
 <label><input type="text" name="notes" value="${p?.notes || ''}" placeholder="Notes" style="width:100%"></label>
 <p><button>${p?.id ? 'Save payment' : 'Record payment'}</button></p>
 </form>
@@ -134,6 +135,9 @@ export function savePayment(ctx) {
     if (!TYPES.some((t) => t.value === a.type)) throw new HttpError(400, `${where}: unknown type`);
     if (a.type === 'order' && !ledger.orders.some((o) => o.po === a.target)) throw new HttpError(400, `${where}: ${a.target || 'blank'} isn't an order on file`);
     if (a.type === 'bill' && !a.target) throw new HttpError(400, `${where}: which courier bill?`);
+    if (a.type === 'order' && !a.part) throw new HttpError(400, `${where}: choose the part: Deposit, Balance or Full payment`);
+    if (a.type === 'order' && !a.rmb) throw new HttpError(400, `${where}: enter the RMB the invoice asks for, so ${a.target} can be confirmed fully paid`);
+    if (a.type === 'bill' && !a.rmb && !a.usd) throw new HttpError(400, `${where}: enter the amount of the bill it pays`);
     return compact({ type: a.type, target: a.target, part: a.part || undefined, usd: number(a.usd, `${where} USD`), rmb: number(a.rmb, `${where} RMB`), description: a.description });
   });
   if (!allocations.length) throw new HttpError(400, 'Say what the payment paid for');
@@ -147,7 +151,7 @@ export function savePayment(ctx) {
   const payment = compact({
     id: existingId || uniqueId(`P-${d}`, new Set(ledger.payments.map((p) => p.id))),
     date: d,
-    reference: text(f, 'reference'),
+    reference: required(text(f, 'reference'), 'Wise reference'),
     usd: number(f.get('usd'), 'USD'),
     gbp: number(f.get('gbp'), 'GBP'),
     eur: number(f.get('eur'), 'EUR'),
@@ -170,9 +174,7 @@ export function savePayment(ctx) {
   const bills = allocations.filter((a) => a.type === 'bill').map((a) => a.target);
   if (bills.length) queueBillCards(ctx.db, bills, before);
   const firstOrder = allocations.find((a) => a.type === 'order');
-  const noRmb = allocations.filter((a) => a.type === 'order' && !a.rmb).map((a) => a.target);
-  const tip = noRmb.length ? ` Tip: add the RMB the invoice states for ${noRmb.join(', ')}, so the order can be confirmed fully paid.` : '';
-  return { redirect: `${firstOrder ? `/orders/${enc(firstOrder.target)}` : '/payments'}?ok=${enc(`Payment ${payment.id} saved.${tip}`)}` };
+  return { redirect: `${firstOrder ? `/orders/${enc(firstOrder.target)}` : '/payments'}?ok=${enc(`Payment ${payment.id} saved.`)}` };
 }
 
 export function deletePayment(ctx) {

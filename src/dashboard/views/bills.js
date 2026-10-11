@@ -58,17 +58,17 @@ ${allocations.map((a) => html`<tr><td><a href="/shipments/${enc(a.shipment.id)}"
 <form class="card" method="post" action="/bills${bill ? `/${enc(bill.id)}` : ''}">
 ${bill ? versionField(bill) : ''}
 <div class="grid">
-  <div><label>Agent</label><input name="agent" value="${bill?.agent || 'Annie'}"></div>
-  <div><label>Date</label><input type="date" name="date" value="${bill?.date || ''}" required></div>
-  <div><label>Total on the bill (RMB)</label><input name="statedTotalRmb" inputmode="decimal" value="${bill?.statedTotalRmb || ''}"></div>
-  <div><label>Rate on the bill (RMB per USD)</label><input name="rmbPerUsd" inputmode="decimal" value="${bill?.rmbPerUsd || ''}"></div>
+  <div><label>Agent (required)</label><input name="agent" value="${bill?.agent || 'Annie'}" required></div>
+  <div><label>Date (required)</label><input type="date" name="date" value="${bill?.date || ''}" required></div>
+  <div><label>Total on the bill, RMB (required)</label><input name="statedTotalRmb" inputmode="decimal" value="${bill?.statedTotalRmb || ''}" required></div>
+  <div><label>Rate on the bill, RMB per USD (required)</label><input name="rmbPerUsd" inputmode="decimal" value="${bill?.rmbPerUsd || ''}" required></div>
 </div>
-<div class="scroll"><table class="rows"><thead><tr><th>Kind</th><th>FBA shipment</th><th>RMB</th><th>Description</th></tr></thead><tbody>
-${lines.map((l) => html`<tr><td>${select('line_kind', KINDS, l.kind || 'shipping')}</td><td><input name="line_shipment" list="shipments" value="${l.shipment || ''}"></td>
-<td><input name="line_rmb" inputmode="decimal" value="${l.rmb || ''}"></td><td><input name="line_description" value="${l.description || l.category || ''}"></td></tr>`)}
+<div class="scroll"><table class="rows" data-need-first><thead><tr><th>Kind</th><th>FBA shipment</th><th>RMB</th><th>Description</th></tr></thead><tbody>
+${lines.map((l) => html`<tr><td>${select('line_kind', KINDS, l.kind || 'shipping')}</td><td><input name="line_shipment" list="shipments" value="${l.shipment || ''}" data-need="shipping domestic"></td>
+<td><input name="line_rmb" inputmode="decimal" value="${l.rmb || ''}" data-need="any"></td><td><input name="line_description" value="${l.description || l.category || ''}" data-need="adjustment expense"></td></tr>`)}
 </tbody></table></div>
 <datalist id="shipments">${ledger.shipments.map((s) => html`<option value="${s.id}">`)}</datalist>
-<p class="muted small">Put domestic shipping on its own shipment’s line. Fees and adjustments with no shipment are shared by RMB share. The bill’s total and rate are checked against its lines.</p>
+<p class="muted small"><b>Required on each line you use:</b> the RMB; for shipping and domestic shipping, the FBA shipment; for an adjustment or expense, what it is. Put domestic shipping on its own shipment’s line. Fees and adjustments with no shipment are shared by RMB share. The bill’s total and rate are checked against its lines.</p>
 <button>${bill ? 'Save bill' : 'Add bill'}</button></form>
 ${bill ? documentsSection(ctx, 'courier_bill', bill.id, { title: 'The bill', back: `/bills/${enc(bill.id)}`, hint: 'e.g. Annie’s bill' }) : ''}
 ${bill ? html`<form method="post" action="/bills/${enc(bill.id)}/delete">${versionField(bill)}<button class="danger">Delete bill</button></form>${history(ctx, 'courier_bill', bill.id)}` : ''}`;
@@ -89,7 +89,9 @@ export function saveBill(ctx) {
     const where = `Line ${i + 1}`;
     if (!KINDS.some((k) => k.value === l.kind)) throw new HttpError(400, `${where}: unknown kind`);
     const shipment = l.shipment ? l.shipment.toUpperCase() : undefined;
-    if (l.kind === 'shipping' && !shipment) throw new HttpError(400, `${where}: shipping needs its FBA shipment`);
+    if ((l.kind === 'shipping' || l.kind === 'domestic') && !shipment) throw new HttpError(400, `${where}: ${l.kind === 'domestic' ? 'domestic shipping' : 'shipping'} needs its FBA shipment`);
+    if (!l.rmb) throw new HttpError(400, `${where}: enter its RMB amount`);
+    if ((l.kind === 'adjustment' || l.kind === 'expense') && !l.description) throw new HttpError(400, `${where}: say what the ${l.kind} is`);
     const line = compact({ kind: l.kind, shipment, rmb: number(l.rmb, `${where} RMB`) });
     if (l.description) line[l.kind === 'expense' ? 'category' : 'description'] = l.description;
     return line;
@@ -98,7 +100,7 @@ export function saveBill(ctx) {
   if (lines.length > 1 && lines.some((l) => l.rmb === undefined)) throw new HttpError(400, 'Every line needs its RMB amount (only a one-line bill may give USD alone)');
 
   const id = existingId || uniqueId(`${(agent || 'BILL').toUpperCase().replace(/[^A-Z0-9]+/g, '-')}-${d}`, new Set(ledger.courierBills.map((b) => b.id)));
-  const bill = compact({ id, agent, date: d, statedTotalRmb: number(f.get('statedTotalRmb'), 'Bill total'), rmbPerUsd: number(f.get('rmbPerUsd'), 'Rate') });
+  const bill = compact({ id, agent, date: d, statedTotalRmb: required(number(f.get('statedTotalRmb'), 'Bill total'), 'Total on the bill'), rmbPerUsd: required(number(f.get('rmbPerUsd'), 'Rate'), 'Rate on the bill') });
   bill.lines = lines;
 
   const before = computeLandingCosts(ledger);

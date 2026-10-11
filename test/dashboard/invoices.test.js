@@ -71,9 +71,9 @@ test('upload an Excel invoice, see the checks, save it to a new PO with the orig
 test('a Wise transfer is recorded as a payment from a prefilled form', async () => {
   const form = await page('/payments/new?wise=777');
   assert.match(form, /Filled in from the Wise transfer of 2026-03-10/);
-  assert.match(form, /name="gbp" inputmode="decimal" value="40"/);
+  assert.match(form, /name="gbp" inputmode="decimal" data-one-of="sent" value="40"/);
   assert.match(form, /value="PO-030"/);
-  const r = await post('/payments', formOf({ wise: '777', date: '2026-03-10', reference: 'PO-030 balance', usd: '53', gbp: '40', alloc_type: 'order', alloc_target: 'PO-030', alloc_part: 'balance', alloc_usd: '53', alloc_rmb: '', alloc_description: '' }), { 'Content-Type': 'application/x-www-form-urlencoded' });
+  const r = await post('/payments', formOf({ wise: '777', date: '2026-03-10', reference: 'PO-030 balance', usd: '53', gbp: '40', alloc_type: 'order', alloc_target: 'PO-030', alloc_part: 'balance', alloc_usd: '53', alloc_rmb: '370', alloc_description: '' }), { 'Content-Type': 'application/x-www-form-urlencoded' });
   assert.equal(r.status, 303);
   assert.equal(db.prepare('SELECT payment_id FROM wise_transfers WHERE id = ?').get('777').payment_id, 'P-2026-03-10');
 });
@@ -86,7 +86,7 @@ test('“Get it from QuickBooks” fills in the rate on a payment that needs one
 });
 
 test('with QuickBooks connected, a payment can be saved without the rate; it shows as needing one', async () => {
-  const body = formOf({ date: '2026-04-05', usd: '60', alloc_type: 'order', alloc_target: 'PO-030', alloc_part: 'balance', alloc_usd: '60', alloc_rmb: '', alloc_description: '' });
+  const body = formOf({ date: '2026-04-05', reference: 'PO-030 balance', usd: '60', alloc_type: 'order', alloc_target: 'PO-030', alloc_part: 'balance', alloc_usd: '60', alloc_rmb: '420', alloc_description: '' });
   const r = await post('/payments', body, { 'Content-Type': 'application/x-www-form-urlencoded' });
   assert.equal(r.status, 303);
   assert.match(await page('/payments/P-2026-04-05'), /needs a QB rate/);

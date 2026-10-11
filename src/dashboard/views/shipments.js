@@ -69,9 +69,9 @@ ${s ? versionField(s) : ''}
 </div>
 <h3>Contents — link each line to its order</h3>
 <div class="scroll"><table class="rows"><thead><tr><th>Product</th><th>Order</th><th>Units shipped</th><th>Units received</th></tr></thead><tbody>
-${items.map((i) => html`<tr><td>${select('item_product', productOptions(ledger, marketplace), i.product, { blank: true })}</td>
+${items.map((i) => html`<tr><td>${select('item_product', productOptions(ledger, marketplace), i.product, { blank: true, attrs: 'data-need="any"' })}</td>
 <td>${select('item_po', poOptions(ledger, marketplace), i.po, { blank: true })}</td>
-<td><input name="item_shipped" inputmode="decimal" value="${i.shipped || ''}"></td><td><input name="item_received" inputmode="decimal" value="${i.received || ''}"></td></tr>`)}
+<td><input name="item_shipped" inputmode="decimal" value="${i.shipped || ''}" data-need="any"></td><td><input name="item_received" inputmode="decimal" value="${i.received || ''}"></td></tr>`)}
 </tbody></table></div>
 <p class="muted small">Received counts only count once the shipment is Closed. Until then, costs use units shipped and ordered.</p>
 <p><label style="display:inline;color:inherit"><input type="checkbox" name="sellerboardManual" value="1"${s?.sellerboardManual ? ' checked' : ''}> Its cost was typed into Sellerboard by hand — keep it out of the feed</label></p>
