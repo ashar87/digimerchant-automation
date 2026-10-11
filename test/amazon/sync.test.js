@@ -191,3 +191,17 @@ test('no shortfall card while Amazon lists SKUs that are not in the product list
   assert.ok(kinds.includes('shipment_closed'));
   assert.ok(!kinds.includes('shortfall'), `unexpected shortfall card: ${kinds}`);
 });
+
+test('SKUs set to ignore are left out, and a shipment of only those is not recorded', async () => {
+  const db = openLandingDb(':memory:');
+  saveLedger(db, { products: [{ id: 'A-US', code: 'A', marketplace: 'US', sku: 'SKU-A' }] }, { actor: 'test' });
+  db.prepare("INSERT INTO settings (key, value) VALUES ('amazon_ignored_skus', 'returned-1, OTHER')").run();
+  const client = recordedSpApi({
+    shipments: { US: [shipment('FBA-R', 'WORKING'), shipment('FBA-M', 'WORKING')] },
+    items: { 'FBA-R': [item('RETURNED-1', 44, 0)], 'FBA-M': [item('SKU-A', 100, 0), item('returned-1', 5, 0)] },
+  });
+  const report = await syncAmazon({ db, client, now: new Date('2026-10-10T08:00:00Z') });
+  assert.deepEqual(report.created, ['FBA-M']);
+  assert.deepEqual(report.unmapped, []);
+  assert.deepEqual(loadLedger(db).shipments.find((s) => s.id === 'FBA-M').items.map((i) => i.product), ['A-US']);
+});

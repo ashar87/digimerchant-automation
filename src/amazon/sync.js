@@ -6,7 +6,7 @@
  * merge Amazon's view into the records (keeping links made by hand), then
  * queue WhatsApp cards for what a person should know about.
  */
-import { loadLedger, saveLedger } from '../landing/store.js';
+import { loadLedger, saveLedger, getSetting } from '../landing/store.js';
 import { computeLandingCosts } from '../landing/engine.js';
 import { D, sum } from '../landing/money.js';
 import { enqueue } from '../notify/outbox.js';
@@ -35,6 +35,8 @@ export async function syncAmazon({ db, client, now = new Date(), actor = 'amazon
   const changed = [];
   const events = [];
   const unmappedByShipment = new Map();
+  // SKUs set aside on the Settings page (e.g. returned stock sent back in, already costed).
+  const ignored = new Set(String(getSetting(db, 'amazon_ignored_skus') || '').split(',').map((s) => s.trim().toUpperCase()).filter(Boolean));
 
   // One query per region: Amazon answers a UK query with the DE shipments too
   // (and the other way round), so asking per marketplace saw each one twice.
@@ -62,7 +64,9 @@ export async function syncAmazon({ db, client, now = new Date(), actor = 'amazon
         }
         if (!markets.includes(marketplace)) continue;
         if (existing && DONE.has(existing.status) && existing.status === amazon.ShipmentStatus) continue;
-        const items = await client.getShipmentItems(marketplace, amazon.ShipmentId);
+        const all = await client.getShipmentItems(marketplace, amazon.ShipmentId);
+        const items = all.filter((it) => !ignored.has(String(it.SellerSKU || '').toUpperCase()));
+        if (!existing && all.length && !items.length) continue; // nothing but ignored stock: not a landing-cost shipment
         const merged = mergeShipment({ existing, amazon, items, marketplace, ledger, today });
         changed.push(merged.shipment);
         events.push(...merged.events);
