@@ -193,6 +193,7 @@ ${order.review === 'needs_review'
   ? html` ${badge(['Imported, to check', 'warn'])} <form class="inline" method="post" action="/orders/${enc(order.po)}/review">${versionField(order)}<button class="ghost">Mark checked</button></form>`
   : ''}</p>
 ${order.notes ? html`<p class="sub">${order.notes}</p>` : ''}
+<details class="small"><summary>Edit PO details</summary>${editOrderForm(ctx, order)}</details>
 ${order.importNotes?.length
   ? html`<div class="notice"><b>Imported from ${order.source || 'the sheet'}.</b> Check against the sheet before marking it checked.<ul>${order.importNotes.map((n) => html`<li>${n}</li>`)}</ul></div>`
   : ''}
@@ -241,7 +242,8 @@ ${documentsSection(ctx, 'order', order.po, { back: `/orders/${enc(order.po)}`, h
 
 <h2>Write-offs</h2>
 <p class="muted small">Units that will never ship. Their cost moves to the units that did arrive.</p>
-${(order.writeOffs || []).length ? html`<ul>${order.writeOffs.map((w) => html`<li>${productName(ledger, w.product)}: ${units(w.qty)} ${w.reason ? `(${w.reason})` : ''}</li>`)}</ul>` : ''}
+${(order.writeOffs || []).length ? html`<ul class="docs">${order.writeOffs.map((w, i) => html`<li>${productName(ledger, w.product)}: ${units(w.qty)} ${w.reason ? `(${w.reason})` : ''} <span class="muted small">${w.date || ''}</span>
+<form class="inline" method="post" action="/orders/${enc(order.po)}/write-offs/${i}/delete" data-confirm="Remove this write-off of ${units(w.qty)} ${productName(ledger, w.product)}?">${versionField(order)}<button class="ghost small">Remove</button></form></li>`)}</ul>` : ''}
 <form class="card" method="post" action="/orders/${enc(order.po)}/write-offs">${versionField(order)}<div class="grid">
 <div><label>Product</label>${select('product', r.lines.map((l) => ({ value: l.product, label: productName(ledger, l.product) })), null)}</div>
 <div><label>Units</label><input name="qty" inputmode="decimal" required></div>
@@ -424,6 +426,58 @@ export function deleteInvoice(ctx) {
  * Refused while payments or shipments still point at it: delete or move those
  * first, so no money or stock is left pointing at nothing. Linked tasks are kept, unlinked.
  */
+/** Why an order's marketplace can't change any more: its products, currency and shipments are per marketplace. */
+function marketplaceLocked(ctx, order) {
+  const { ledger } = ctx.data;
+  if ((order.invoices || []).length) return 'it has invoices';
+  if (ledger.payments.some((p) => p.allocations.some((a) => a.type === 'order' && a.target === order.po))) return 'it has payments';
+  if (ledger.shipments.some((s) => s.items.some((i) => i.po === order.po))) return 'shipments are linked to it';
+  return null;
+}
+
+function editOrderForm(ctx, order) {
+  const locked = marketplaceLocked(ctx, order);
+  return html`<form class="card" method="post" action="/orders/${enc(order.po)}/edit">${versionField(order)}<div class="grid">
+<div><label>PO number</label><input value="${order.po}" disabled></div>
+<div><label for="o-supplier">Supplier (required)</label><input id="o-supplier" name="supplier" value="${order.supplier || ''}" required></div>
+<div><label for="o-market">Marketplace${locked ? ' (fixed: ' + locked + ')' : ''}</label>${select('marketplace', MARKETPLACES, order.marketplace, { attrs: locked ? 'id="o-market" disabled' : 'id="o-market"' })}</div>
+<div><label for="o-notes">Notes</label><input id="o-notes" name="notes" value="${order.notes || ''}"></div>
+</div><p class="muted small">The PO number can't change: it's in the Wise references and the shipment names in Seller Central. If it's wrong, delete this PO and create it again.</p>
+<button>Save PO details</button></form>`;
+}
+
+export function editOrder(ctx) {
+  const order = findOrder(ctx, ctx.params[0]);
+  const back = `/orders/${enc(order.po)}`;
+  assertFresh(ctx, 'order', order.po, order, back);
+  const supplier = required(text(ctx.form, 'supplier'), 'Supplier');
+  let marketplace = order.marketplace;
+  const asked = text(ctx.form, 'marketplace');
+  if (asked && asked !== order.marketplace) {
+    const locked = marketplaceLocked(ctx, order);
+    if (locked) throw Object.assign(new HttpError(400, `${order.po}'s marketplace can't change now that ${locked}.`), { back });
+    if (!MARKETPLACES.includes(asked)) throw Object.assign(new HttpError(400, 'Choose UK, DE or US'), { back });
+    marketplace = asked;
+  }
+  const updated = { ...structuredClone(order), supplier, marketplace, notes: text(ctx.form, 'notes') };
+  if (!updated.notes) delete updated.notes;
+  saveLedger(ctx.db, { orders: [updated] }, { actor: ctx.actor });
+  return { redirect: `${back}?ok=${enc(`${order.po} saved.`)}` };
+}
+
+/** Takes off a write-off entered by mistake (by its position in the list). */
+export function removeWriteOff(ctx) {
+  const current = findOrder(ctx, ctx.params[0]);
+  const back = `/orders/${enc(current.po)}`;
+  assertFresh(ctx, 'order', current.po, current, back);
+  const i = Number(ctx.params[1]);
+  if (!Number.isInteger(i) || !(current.writeOffs || [])[i]) throw Object.assign(new HttpError(400, 'That write-off is no longer there. Reload and try again.'), { back });
+  const order = structuredClone(current);
+  order.writeOffs.splice(i, 1);
+  saveLedger(ctx.db, { orders: [order] }, { actor: ctx.actor });
+  return { redirect: `${back}?ok=Write-off+removed.` };
+}
+
 export function deleteOrder(ctx) {
   const order = findOrder(ctx, ctx.params[0]);
   const back = `/orders/${enc(order.po)}`;
