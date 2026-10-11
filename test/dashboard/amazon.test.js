@@ -13,7 +13,8 @@ before(async () => {
     orders: [{ po: 'PO-002', supplier: 'Supplier Two', marketplace: 'UK', invoices: [{ id: 'i2', kind: 'final', date: '2026-01-02', lines: [{ kind: 'goods', product: 'B-UK', qty: 500, rmb: 5000 }] }] }],
     payments: [],
     courierBills: [],
-    shipments: [],
+    // Added by hand on the Shipments page with just its FBA ID; the check fills in the rest.
+    shipments: [{ id: 'FBA9', marketplace: 'UK', status: 'WORKING', items: [] }],
   }, { actor: 'test' });
   spapi = recordedSpApi({
     shipments: { UK: [{ ShipmentId: 'FBA9', ShipmentName: 'FBA STA', ShipmentStatus: 'SHIPPED' }] },
@@ -33,7 +34,7 @@ const post = (path, body = '') => fetch(base + path, { method: 'POST', body, red
 test('“Check now” syncs, and the Inbox offers the link and flags the unknown SKU', async () => {
   const r = await post('/amazon/sync');
   assert.equal(r.status, 303);
-  assert.match(decodeURIComponent(r.headers.get('location')), /1 new/);
+  assert.match(decodeURIComponent(r.headers.get('location')), /1 updated/);
   const inbox = await page('/');
   assert.match(inbox, /New shipment FBA9 \(UK\)/);
   assert.match(inbox, /Matches PO-002/);

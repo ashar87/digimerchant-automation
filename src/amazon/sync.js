@@ -23,7 +23,12 @@ const PO_IN_NAME_ALL = /\bPO-\d{1,5}\b/gi;
 const SHORTFALL_UNITS = 5;
 const SHORTFALL_SHARE = D('0.01');
 
-export async function syncAmazon({ db, client, now = new Date(), actor = 'amazon-sync', lookbackDays = 90 }) {
+/**
+ * `discover`: also pick up shipments that aren't in the dashboard yet (anything
+ * Amazon updated recently). Off by default: Ashar wants only the shipments on
+ * the dashboard kept up to date; new ones are added on the Shipments page.
+ */
+export async function syncAmazon({ db, client, now = new Date(), actor = 'amazon-sync', lookbackDays = 90, discover = false }) {
   const ledger = loadLedger(db);
   const before = computeLandingCosts(ledger);
   const today = now.toISOString().slice(0, 10);
@@ -52,12 +57,13 @@ export async function syncAmazon({ db, client, now = new Date(), actor = 'amazon
       const open = ledger.shipments.filter((s) => markets.includes(s.marketplace) && !DONE.has(s.status)).map((s) => s.id);
       const found = new Map();
       if (open.length) for (const s of await client.getShipments(markets[0], { ids: open })) found.set(s.ShipmentId, s);
-      for (const s of await client.getShipments(markets[0], { updatedAfter: since.toISOString(), updatedBefore: until.toISOString() })) found.set(s.ShipmentId, s);
+      if (discover) for (const s of await client.getShipments(markets[0], { updatedAfter: since.toISOString(), updatedBefore: until.toISOString() })) found.set(s.ShipmentId, s);
 
       for (const amazon of found.values()) {
         if (ignored.has(String(amazon.ShipmentId).toUpperCase())) continue;
         report.checked++;
         const existing = ledger.shipments.find((x) => x.id === amazon.ShipmentId);
+        if (!existing && !discover) continue;
         const marketplace = existing?.marketplace || (markets.length === 1 ? markets[0] : marketplaceForWarehouse(amazon.DestinationFulfillmentCenterId, markets));
         if (!marketplace) {
           // Counted as a failed run, so the next one looks again (and the Inbox says so) until the code is added.

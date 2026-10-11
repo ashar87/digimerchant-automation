@@ -28,7 +28,7 @@ ${last ? html`Last checked with Amazon ${last.at.slice(0, 16).replace('T', ' ')}
 export async function runAmazonSync(ctx) {
   if (!ctx.spapi) throw new HttpError(400, 'Amazon isn’t connected yet.');
   const r = await syncAmazon({ db: ctx.db, client: ctx.spapi, actor: `amazon-sync (${ctx.actor})` });
-  const msg = r.errors.length ? `Amazon check had problems: ${r.errors.join('; ')}` : `Checked ${r.checked} shipment(s): ${r.created.length} new, ${r.updated.length} updated, ${r.cards} card(s) queued.`;
+  const msg = r.errors.length ? `Amazon check had problems: ${r.errors.join('; ')}` : `Checked ${r.checked} shipment(s) with Amazon: ${r.updated.length} updated, ${r.cards} card(s) queued.`;
   return { redirect: `/shipments?ok=${enc(msg)}` };
 }
 

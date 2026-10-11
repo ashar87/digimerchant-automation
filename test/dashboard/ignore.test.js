@@ -54,7 +54,7 @@ test('an unlinked shipment can be ignored from the Inbox: removed, its question 
   assert.equal(getCard(db, unsentCard), undefined);
 
   const client = recordedSpApi({ shipments: { UK: [{ ShipmentId: 'FBA-OLD', ShipmentStatus: 'CLOSED' }] }, items: { 'FBA-OLD': [{ SellerSKU: 'SKU-A', QuantityShipped: 50, QuantityReceived: 50 }] } });
-  const report = await syncAmazon({ db, client, now: new Date('2026-10-11T08:00:00Z') });
+  const report = await syncAmazon({ db, discover: true, client, now: new Date('2026-10-11T08:00:00Z') });
   assert.deepEqual(report.created, []);
 });
 

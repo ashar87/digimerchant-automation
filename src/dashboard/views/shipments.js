@@ -15,7 +15,7 @@ export function shipmentsPage(ctx) {
   const results = new Map(result.shipments.map((s) => [s.id, s]));
   const body = html`
 <h1>Shipments</h1>
-<p class="sub">Status and counts come from Amazon each morning once it’s connected; until then they’re entered here.</p>
+<p class="sub">Amazon updates the status and counts of the shipments listed here each morning (closed and cancelled ones are left as they are). To track a new shipment, add it with its FBA ID and name it like “PO-020 UK”: the next check fills in its contents and links it to the PO.</p>
 ${amazonPanel(ctx)}
 <p><a class="button" href="/shipments/new">Add a shipment</a></p>
 <div class="card scroll"><table>
