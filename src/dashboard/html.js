@@ -204,7 +204,7 @@ input[type=number]{width:110px}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px 14px;margin-bottom:12px}
 .rows td{padding:3px 4px;border:0}.rows input,.rows select{width:100%}
 button,.button{font:inherit;font-weight:600;padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:var(--accent);color:var(--btn-ink);cursor:pointer}
-button.ghost{background:transparent;color:var(--accent)}button.danger{background:transparent;border-color:var(--bad);color:var(--bad)}
+button.ghost,.button.ghost{background:transparent;color:var(--accent)}button.danger{background:transparent;border-color:var(--bad);color:var(--bad)}
 details{margin:6px 0}summary{cursor:pointer;color:var(--accent)}
 dl.working{display:grid;grid-template-columns:max-content 1fr;gap:4px 16px;margin:8px 0}
 dl.working dt{color:var(--muted)}dl.working dd{margin:0;font-variant-numeric:tabular-nums}

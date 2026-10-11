@@ -26,6 +26,27 @@ const PARTS = [
   { value: 'full', label: 'Full payment' },
 ];
 const BLANK_ROWS = 4;
+// Suppliers take 30% up front and 70% before shipping: what "Pay deposit" fills in.
+export const DEPOSIT_SHARE = '0.3';
+
+/**
+ * What "Pay deposit" / "Pay balance" / "Pay in full" on an order page fill in:
+ * the part, the RMB the invoice asks for, and a Wise reference. Null when the
+ * order's invoice total isn't known yet.
+ */
+export function presetFor(result, po, part) {
+  const r = result.orders.find((o) => o.po === po);
+  if (!r || !['deposit', 'balance', 'full'].includes(part)) return null;
+  const total = r.totalRmb;
+  let rmb = null;
+  if (total !== null && total !== undefined) {
+    if (part === 'deposit') rmb = total.times(DEPOSIT_SHARE).toDecimalPlaces(2);
+    else if (part === 'balance') rmb = total.minus(r.paidRmb || 0).toDecimalPlaces(2);
+    else rmb = total;
+  }
+  const reference = { deposit: `${po} 30%`, balance: `${po} balance`, full: `${po} full` }[part];
+  return { part, rmb: rmb && rmb.gt(0) ? rmb.toString() : null, total, reference };
+}
 
 export function paymentsPage(ctx) {
   const { ledger } = ctx.data;
@@ -53,7 +74,9 @@ export function paymentForm(ctx) {
   const wise = !p && wiseId ? ctx.db.prepare('SELECT * FROM wise_transfers WHERE id = ?').get(wiseId) : null;
   const fromWise = wise ? paymentFromTransfer(wise) : null;
   if (fromWise) p = { ...fromWise, id: null };
-  const allocations = [...(p?.allocations || (fromWise?.allocation ? [fromWise.allocation] : preset ? [{ type: 'order', target: preset }] : []))];
+  const quick = !p && preset ? presetFor(ctx.data.result, preset, ctx.url.searchParams.get('part')) : null;
+  if (quick) p = { reference: quick.reference };
+  const allocations = [...(p?.allocations || (fromWise?.allocation ? [fromWise.allocation] : preset ? [{ type: 'order', target: preset, part: quick?.part, rmb: quick?.rmb }] : []))];
   for (let i = 0; i < BLANK_ROWS; i++) allocations.push({});
   const targets = [
     ...ledger.orders.map((o) => o.po),
@@ -65,6 +88,7 @@ export function paymentForm(ctx) {
 <h1>${p?.id ? `Payment ${p.id}` : 'Record a payment'}</h1>
 ${fromWise ? html`<p class="notice">Filled in from the Wise transfer of ${fromWise.date}${fromWise.reference ? ` (“${fromWise.reference}”)` : ''}. Check the amounts against Wise and say what it paid for.</p>` : ''}
 ${p?.id ? rateStatus(ctx, p) : ''}
+${quick ? html`<p class="notice">${{ deposit: 'Deposit', balance: 'Balance', full: 'Full payment' }[quick.part]} for <a href="/orders/${enc(preset)}">${preset}</a>${quick.rmb ? html`: ${Number(quick.rmb).toLocaleString('en-GB')} RMB${quick.part === 'deposit' ? ' (30% of the invoice)' : quick.part === 'balance' ? ' (what’s still unpaid)' : ' (the whole invoice)'} is filled in. Change it if the supplier asked for a different amount, then add what you sent.` : html`. The invoice total isn’t known yet, so fill in the amount the supplier asked for.`}</p>` : ''}
 <form class="card" method="post" action="/payments${p?.id ? `/${enc(p.id)}` : ''}">
 ${fromWise ? html`<input type="hidden" name="wise" value="${fromWise.wise}">` : ''}
 ${p?.id ? versionField(p) : ''}

@@ -212,7 +212,11 @@ ${r.lines.some((l) => l.projected) ? html`<p class="muted small">* Only the depo
 <thead><tr><th>Date</th><th>Payment</th><th>Reference</th><th>Part</th><th class="n key">${cur}</th><th class="n">RMB</th></tr></thead>
 <tbody>${r.payments.map((p) => html`<tr><td>${p.date}</td><td><a href="/payments/${enc(p.payment)}">${p.payment}</a></td><td>${p.reference || ''}</td><td>${p.part || ''}</td><td class="n">${money(p.amount, cur)}</td><td class="n">${rmb(p.rmb)}</td></tr>`)}
 <tr class="total"><td colspan="4">Total</td><td class="n">${money(r.cash, cur)}</td><td class="n">${rmb(r.paidRmb)}</td></tr></tbody></table>
-<p><a class="button" href="/payments/new?po=${enc(order.po)}">Record a payment</a></p></div>
+<p>${r.paidStatus === 'paid'
+  ? html`<a href="/payments/new?po=${enc(order.po)}">Record another payment</a>`
+  : r.paidStatus === 'deposit_paid'
+    ? html`<a class="button" href="/payments/new?po=${enc(order.po)}&amp;part=balance">Pay balance</a> <a href="/payments/new?po=${enc(order.po)}" style="margin-left:10px">Other payment</a>`
+    : html`<a class="button" href="/payments/new?po=${enc(order.po)}&amp;part=deposit">Pay deposit</a> <a class="button ghost" href="/payments/new?po=${enc(order.po)}&amp;part=full" style="margin-left:6px">Pay in full</a> <a href="/payments/new?po=${enc(order.po)}" style="margin-left:10px">Other payment</a>`}</p></div>
 
 <h2>Shipments from this order</h2>
 ${shipments.length
@@ -233,7 +237,11 @@ ${poTasksSection(ctx, order.po)}
 
 <h2>Invoices${r.invoices.length > 1 ? html` <span class="muted small">· ${r.invoices.length} invoices on this PO, added together</span>` : ''}</h2>
 ${invoiceSeries(order).map((g, i, all) => html`${all.length > 1 ? html`<h3>Invoice ${i + 1}: ${g.name}</h3>` : ''}${g.versions.map((inv) => invoiceCard(ctx, order, inv, g.inUse?.id === inv.id, ledger))}`)}
-<details${order.invoices?.length ? '' : raw(' open')}><summary>${order.invoices?.length ? 'Add an invoice: a final or corrected version, or another invoice on this PO' : 'Add the proforma or invoice'}</summary>
+<form class="card" method="post" action="/invoices/upload" enctype="multipart/form-data"><input type="hidden" name="po" value="${order.po}">
+<label for="inv-file"><b>${order.invoices?.length ? 'Upload an invoice: the final, a corrected version, or another invoice on this PO' : 'Upload the proforma or invoice'}</b> (Excel, PDF or photo)</label>
+<input id="inv-file" type="file" name="file" required accept=".xlsx,.pdf,.jpg,.jpeg,.png,.webp,.heic">
+<p><button>Read invoice</button> <span class="muted small">It's read for you${ctx.invoiceReader ? '' : ' (Excel only here: PDFs and photos need typing in)'}, then you check it and save it to ${order.po}.</span></p></form>
+<details><summary>Or type it in by hand</summary>
 ${invoiceForm(ctx, order, null)}</details>
 
 ${documentsSection(ctx, 'order', order.po, { back: `/orders/${enc(order.po)}`, hint: 'e.g. packing list, contract, photos of the goods' })}
