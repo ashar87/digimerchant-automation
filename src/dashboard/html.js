@@ -53,6 +53,10 @@ export const shipmentStatusLabel = (s) => (s ? s.replace(/_/g, ' ').toLowerCase(
 
 export const badge = ([label, tone]) => html`<span class="badge ${tone}">${label}</span>`;
 
+const STATUS_TONE = { CLOSED: 'ok', RECEIVING: 'wait', CHECKED_IN: 'wait', DELIVERED: 'wait', SHIPPED: 'est', IN_TRANSIT: 'est', CANCELLED: 'bad', DELETED: 'bad', ERROR: 'bad' };
+/** An Amazon shipment status as a coloured badge (grey while still being prepared). */
+export const statusBadge = (s) => badge([shipmentStatusLabel(s), STATUS_TONE[s] || '']);
+
 export function select(name, options, selected, { blank = false, attrs = '' } = {}) {
   const opts = options.map((o) => (typeof o === 'string' ? { value: o, label: o } : o));
   return html`<select name="${name}" ${raw(attrs)}>${blank ? html`<option value=""></option>` : ''}${opts.map(

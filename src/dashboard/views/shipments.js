@@ -1,4 +1,4 @@
-import { html, select, units, unitCost, badge, BATCH_STATUS, SHIPMENT_STATUSES, shipmentStatusLabel } from '../html.js';
+import { html, select, units, unitCost, badge, statusBadge, BATCH_STATUS, SHIPMENT_STATUSES, shipmentStatusLabel } from '../html.js';
 import { saveLedger, deleteRecord } from '../../landing/store.js';
 import { text, number, date, required, rows, compact } from '../forms.js';
 import { HttpError, notFound } from '../errors.js';
@@ -6,6 +6,7 @@ import { MARKETPLACES, productOptions, poOptions, productName, enc } from './com
 import { history } from './orders.js';
 import { versionField, assertFresh } from '../versions.js';
 import { amazonPanel } from './amazon.js';
+import { ignoreShipment } from '../../amazon/ignored.js';
 
 const BLANK_ITEMS = 3;
 
@@ -18,14 +19,14 @@ export function shipmentsPage(ctx) {
 ${amazonPanel(ctx)}
 <p><a class="button" href="/shipments/new">Add a shipment</a></p>
 <div class="card scroll"><table>
-<thead><tr><th>Shipment</th><th>Mkt</th><th>Contents</th><th>Amazon</th><th class="n">Received</th><th>Order</th><th class="n key">Delivery / unit</th></tr></thead>
+<thead><tr><th>Shipment</th><th>Mkt</th><th>Contents</th><th>Status</th><th class="n">Received</th><th>Order</th><th class="n key">Delivery / unit</th></tr></thead>
 <tbody>${[...ledger.shipments].reverse().map((s) => {
   const r = results.get(s.id);
   const diff = r.closed ? r.receivedUnits.minus(r.shippedUnits) : null;
   const pos = [...new Set(s.items.map((i) => i.po).filter(Boolean))];
   return html`<tr><td><a href="/shipments/${enc(s.id)}">${s.id}</a></td><td>${s.marketplace}</td>
   <td class="small">${s.items.map((i, n) => html`${n ? ', ' : ''}${productName(ledger, i.product)} ×${units(i.shipped)}`)}</td>
-  <td>${shipmentStatusLabel(s.status)}</td>
+  <td>${statusBadge(s.status)}</td>
   <td class="n">${r.closed ? html`${units(r.receivedUnits)} ${diff.isZero() ? '' : html`<span class="${diff.lt(0) ? 'bad' : 'ok'} badge">${diff.gt(0) ? '+' : ''}${diff.toString()}</span>`}` : html`— / ${units(r.shippedUnits)}`}</td>
   <td class="small">${pos.length ? pos.map((po, n) => html`${n ? ', ' : ''}<a href="/orders/${enc(po)}">${po}</a>`) : badge(['Not linked', 'bad'])}${s.items.some((i) => !i.po) && pos.length ? ' +unlinked' : ''}</td>
   <td class="n">${unitCost(r.delivery.perUnit, r.currency)} ${r.delivery.basis === 'estimated' ? html`<span class="muted small">est.</span>` : ''}</td></tr>`;
@@ -75,6 +76,7 @@ ${items.map((i) => html`<tr><td>${select('item_product', productOptions(ledger, 
 <p class="muted small">Received counts only count once the shipment is Closed. Until then, costs use units shipped and ordered.</p>
 <p><label style="display:inline;color:inherit"><input type="checkbox" name="sellerboardManual" value="1"${s?.sellerboardManual ? ' checked' : ''}> Its cost was typed into Sellerboard by hand — keep it out of the feed</label></p>
 <button>${s ? 'Save shipment' : 'Add shipment'}</button></form>
+${s && !s.items.some((i) => i.po) ? html`<form class="card" method="post" action="/shipments/${enc(s.id)}/ignore">${versionField(s)}<p class="small" style="margin-top:0">No PO? If this is an old shipment from before the dashboard, or returned stock sent back in, ignore it: it's removed here and the Amazon check won't bring it back.</p><button class="ghost">Ignore this shipment</button></form>` : ''}
 ${s ? html`<form method="post" action="/shipments/${enc(s.id)}/delete">${versionField(s)}<button class="danger">Delete shipment</button></form>${history(ctx, 'shipment', s.id)}` : ''}`;
   return { title: s ? s.id : 'New shipment', body };
 }
@@ -120,6 +122,17 @@ export function saveShipment(ctx) {
   shipment.items = items;
   saveLedger(ctx.db, { shipments: [shipment] }, { actor: ctx.actor });
   return { redirect: `/shipments/${enc(id)}?ok=${enc(`${id} saved.`)}` };
+}
+
+/** Old shipments with no PO, or returned stock: removed, and the Amazon check won't bring them back. */
+export function ignoreShipmentForm(ctx) {
+  const s = ctx.data.ledger.shipments.find((x) => x.id === ctx.params[0]);
+  if (!s) throw notFound(`Shipment ${ctx.params[0]}`);
+  const back = ctx.form.get('back') === '/' ? '/' : `/shipments/${enc(s.id)}`;
+  assertFresh(ctx, 'shipment', s.id, s, back);
+  if (s.items.some((i) => i.po)) throw Object.assign(new HttpError(400, `${s.id} is linked to ${[...new Set(s.items.map((i) => i.po).filter(Boolean))].join(', ')}, so it counts towards that order's costs. Unlink it first if it really should be ignored.`), { back });
+  ignoreShipment(ctx.db, s.id, { actor: ctx.actor });
+  return { redirect: `${back === '/' ? '/' : '/shipments'}?ok=${enc(`${s.id} ignored and removed. The Amazon check will skip it (undo on the Settings page).`)}` };
 }
 
 export function deleteShipment(ctx) {

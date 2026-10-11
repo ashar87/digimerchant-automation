@@ -1,4 +1,4 @@
-import { html, raw, select, badge, rmb, units, pct, unitCost, money, BATCH_STATUS, PAID_STATUS, shipmentStatusLabel } from '../html.js';
+import { html, raw, select, badge, statusBadge, rmb, units, pct, unitCost, money, BATCH_STATUS, PAID_STATUS, shipmentStatusLabel } from '../html.js';
 import { poTasksSection } from './tasks.js';
 import { saveLedger, nextPo, auditTrail } from '../../landing/store.js';
 import { currentInvoices } from '../../landing/engine.js';
@@ -215,10 +215,10 @@ ${r.lines.some((l) => l.projected) ? html`<p class="muted small">* Only the depo
 
 <h2>Shipments from this order</h2>
 ${shipments.length
-  ? html`<div class="card scroll"><table><thead><tr><th>Shipment</th><th>Amazon</th><th class="n">Shipped</th><th class="n">Received</th><th class="n key">Delivery / unit</th></tr></thead><tbody>${shipments.map((s) => {
+  ? html`<div class="card scroll"><table><thead><tr><th>Shipment</th><th>Status</th><th class="n">Shipped</th><th class="n">Received</th><th class="n key">Delivery / unit</th></tr></thead><tbody>${shipments.map((s) => {
       const sr = shipmentResults.get(s.id);
       const mine = s.items.filter((i) => i.po === order.po);
-      return html`<tr><td><a href="/shipments/${enc(s.id)}">${s.id}</a></td><td>${shipmentStatusLabel(s.status)}</td>
+      return html`<tr><td><a href="/shipments/${enc(s.id)}">${s.id}</a></td><td>${statusBadge(s.status)}</td>
       <td class="n">${units(mine.reduce((a, i) => a + Number(i.shipped || 0), 0))}</td><td class="n">${sr?.closed ? units(mine.reduce((a, i) => a + Number(i.received || 0), 0)) : '—'}</td>
       <td class="n">${unitCost(sr?.delivery.perUnit, cur)} <span class="muted small">${sr?.delivery.basis === 'estimated' ? 'est.' : sr?.delivery.bills.map((b) => b.bill).join(', ')}</span></td></tr>`;
     })}</tbody></table></div>`

@@ -27,7 +27,8 @@ export function inboxItems(ctx) {
   const sync = lastSync(ctx.db);
   if (sync && !sync.ok) items.push({ tone: 'error', title: `The last Amazon check failed: ${(sync.summary.errors || []).join('; ')}`, href: '/shipments', count: true });
   for (const card of awaitingReply(ctx.db)) {
-    items.push({ tone: 'warning', title: card.text.split('\n')[0].replace(/^\S+\s/, ''), detail: card.text.split('\n').slice(1, -1).join(' · '), href: card.payload?.shipment ? `/shipments/${enc(card.payload.shipment)}` : '/messages', card: card.id, count: true });
+    const shipment = card.payload?.shipment ? ledger.shipments.find((s) => s.id === card.payload.shipment) : null;
+    items.push({ tone: 'warning', title: card.text.split('\n')[0].replace(/^\S+\s/, ''), detail: card.text.split('\n').slice(1, -1).join(' · '), href: card.payload?.shipment ? `/shipments/${enc(card.payload.shipment)}` : '/messages', card: card.id, shipment: shipment && !shipment.items.some((i) => i.po) ? shipment : null, count: true });
   }
   for (const d of pendingDrafts(ctx.db)) {
     const problems = (d.reading.checks || []).filter((c) => c.severity !== 'ok').length;
@@ -73,7 +74,8 @@ ${items.length
       (i) => html`<li><span class="sev ${i.tone}">${i.tone === 'error' ? '✗' : i.tone === 'warning' ? '!' : 'i'}</span>
       <div style="flex:1">${i.href ? html`<a href="${i.href}">${i.title}</a>` : i.title}${i.detail ? html`<div class="muted small">${i.detail}</div>` : ''}</div>
       ${i.review ? html`<form class="inline" method="post" action="/orders/${enc(i.review)}/review"><input type="hidden" name="back" value="/">${versionField(i.order)}<button class="ghost">Mark checked</button></form>` : ''}
-      ${i.card ? html`<form class="inline" method="post" action="/cards/${i.card}/reply"><button name="reply" value="Y">Link</button> <button class="ghost" name="reply" value="N">Not this</button></form>` : ''}</li>`
+      ${i.card ? html`<form class="inline" method="post" action="/cards/${i.card}/reply"><button name="reply" value="Y">Link</button> <button class="ghost" name="reply" value="N">Not this</button></form>` : ''}
+      ${i.shipment ? html`<form class="inline" method="post" action="/shipments/${enc(i.shipment.id)}/ignore"><input type="hidden" name="back" value="/">${versionField(i.shipment)}<button class="ghost" title="Old shipment with no PO, or returned stock: remove it and skip it from now on">Ignore</button></form>` : ''}</li>`
     )}</ul></div>`
   : ''}
 ${waiting.length

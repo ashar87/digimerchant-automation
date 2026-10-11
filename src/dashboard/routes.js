@@ -1,7 +1,7 @@
 import { inboxPage } from './views/inbox.js';
 import { ordersPage, createOrder, orderPage, editInvoicePage, saveInvoice, deleteInvoice, markReviewed, addWriteOff } from './views/orders.js';
 import { paymentsPage, paymentForm, savePayment, deletePayment } from './views/payments.js';
-import { shipmentsPage, shipmentForm, saveShipment, deleteShipment } from './views/shipments.js';
+import { shipmentsPage, shipmentForm, saveShipment, deleteShipment, ignoreShipmentForm } from './views/shipments.js';
 import { costsPage, batchPage } from './views/costs.js';
 import { productsPage, productPage, saveProduct, deleteProduct } from './views/products.js';
 import { billsPage, billPage, saveBill, deleteBill } from './views/bills.js';
@@ -60,6 +60,7 @@ export const routes = [
   r('GET', '/shipments/new', shipmentForm),
   r('POST', '/shipments', saveShipment),
   r('POST', '/shipments/:seg/delete', deleteShipment),
+  r('POST', '/shipments/:seg/ignore', ignoreShipmentForm),
   r('GET', '/shipments/:seg', shipmentForm),
   r('POST', '/shipments/:seg', saveShipment),
 

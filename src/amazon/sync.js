@@ -6,7 +6,8 @@
  * merge Amazon's view into the records (keeping links made by hand), then
  * queue WhatsApp cards for what a person should know about.
  */
-import { loadLedger, saveLedger, getSetting } from '../landing/store.js';
+import { loadLedger, saveLedger } from '../landing/store.js';
+import { ignoredShipments } from './ignored.js';
 import { computeLandingCosts } from '../landing/engine.js';
 import { D, sum } from '../landing/money.js';
 import { enqueue } from '../notify/outbox.js';
@@ -36,7 +37,7 @@ export async function syncAmazon({ db, client, now = new Date(), actor = 'amazon
   const events = [];
   const unmappedByShipment = new Map();
   // Shipments set aside on the Settings page (e.g. returned stock sent back in, already costed).
-  const ignored = new Set(String(getSetting(db, 'amazon_ignored_shipments') || '').split(',').map((s) => s.trim().toUpperCase()).filter(Boolean));
+  const ignored = ignoredShipments(db);
 
   // One query per region: Amazon answers a UK query with the DE shipments too
   // (and the other way round), so asking per marketplace saw each one twice.
