@@ -1,4 +1,6 @@
 import { config, loadChats, assertProviderEnv } from './config.js';
+import { createRequire } from 'node:module';
+import { writeHealth } from './health.js';
 import { log } from './logger.js';
 import { createWhatsAppClient, describeMessage } from './whatsapp/client.js';
 import { createApprovalFlow } from './whatsapp/approval.js';
@@ -162,6 +164,7 @@ const readyTimer = setTimeout(async () => {
       new Promise((r) => setTimeout(() => r('page did not answer within 10s'), 10_000)),
     ]);
     log.error('stuck page:', JSON.stringify(page));
+    if (page && typeof page === 'object') noteHealth({ stuck: { at: new Date().toISOString(), version: page.version, store: page.store } });
   } catch (err) {
     log.error('stuck page could not be read:', err.message);
   }
@@ -191,7 +194,33 @@ client.on('ready', async () => {
     await approval.sendPendingList();
   }
   await deliverCards();
+  const now = new Date().toISOString();
+  noteHealth({ readyAt: now, beatAt: now, version: await client.getWWebVersion().catch(() => null), pinned: config.waWebVersion });
+  checkLibrary();
 });
+
+/* ---------- health, for the dashboard's Inbox (WhatsApp can't report its own outage) ---------- */
+function noteHealth(patch) {
+  try {
+    writeHealth(store.landingDb(), patch);
+  } catch (err) {
+    log.warn('could not record listener health:', err.message);
+  }
+}
+setInterval(() => isReady && noteHealth({ beatAt: new Date().toISOString() }), 60_000).unref();
+
+/** Once a day: is there a newer whatsapp-web.js? (The real fix when WhatsApp Web is pinned.) */
+const WWEBJS_INSTALLED = createRequire(import.meta.url)('whatsapp-web.js/package.json').version;
+async function checkLibrary() {
+  try {
+    const res = await fetch('https://registry.npmjs.org/whatsapp-web.js/latest', { signal: AbortSignal.timeout(15_000) });
+    const latest = res.ok ? (await res.json()).version : null;
+    if (latest) noteHealth({ lib: { installed: WWEBJS_INSTALLED, latest, checkedAt: new Date().toISOString() } });
+  } catch (err) {
+    log.warn('could not check for a whatsapp-web.js update:', err.message);
+  }
+}
+setInterval(checkLibrary, 24 * 3600_000).unref();
 
 /* Cards the dashboard queued (Amazon sync, bills, cost changes) go out from here, the one WhatsApp session. */
 let delivering = false;

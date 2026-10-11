@@ -101,6 +101,8 @@ export const config = {
   // Pin WhatsApp Web to a version the library can drive, served from data/wa-web/<version>.html.
   // For when WhatsApp ships a build whose internals whatsapp-web.js can't reach yet. Blank = live.
   waWebVersion: process.env.WA_WEB_VERSION || null,
+  // When the archive says that build stops being accepted; the Inbox warns two weeks before.
+  waWebVersionExpires: process.env.WA_WEB_VERSION_EXPIRES || null,
   waWebCachePath: path.join(ROOT, 'data', 'wa-web'),
   mediaCachePath: path.join(ROOT, 'data', 'media'),
 };

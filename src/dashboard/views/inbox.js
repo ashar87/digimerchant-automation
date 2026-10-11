@@ -8,6 +8,8 @@ import { pendingDrafts } from '../../invoices/intake.js';
 import { rateLookups } from '../../quickbooks/rates.js';
 import { unrecordedTransfers } from '../../wise/import.js';
 import { inboxTaskItems } from './tasks.js';
+import { readHealth, healthItems } from '../../health.js';
+import { config } from '../../config.js';
 
 /**
  * Everything that needs a person, most urgent first. Things that only need
@@ -16,6 +18,10 @@ import { inboxTaskItems } from './tasks.js';
 export function inboxItems(ctx) {
   const { ledger, result } = ctx.data;
   const items = [];
+
+  // The WhatsApp listener first: when it's down, nothing else reaches your phone.
+  const when = (iso) => new Date(iso).toLocaleString('en-GB', { timeZone: config.timezone, weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  items.push(...healthItems(readHealth(ctx.db), { pinned: config.waWebVersion, pinExpires: config.waWebVersionExpires, when }));
 
   for (const i of result.issues.filter((x) => x.severity === 'error')) {
     items.push({ tone: 'error', title: i.message, href: refHref(ledger, i.ref), count: true });
