@@ -49,6 +49,9 @@ export function createWhatsAppClient() {
   });
 
   client.on('auth_failure', (m) => log.error('WhatsApp auth failed:', m));
+  // Progress while WhatsApp Web loads, so a start that stalls shows where.
+  client.on('loading_screen', (percent, message) => log.info(`WhatsApp loading ${percent}% ${message || ''}`.trim()));
+  client.on('change_state', (state) => log.info(`WhatsApp state: ${state}`));
   client.on('disconnected', (reason) => {
     log.error('WhatsApp disconnected:', reason, '- exiting so your process manager can restart it');
     process.exit(1);

@@ -146,9 +146,25 @@ async function reportGap(chatLabel, { missed, author }) {
  * manager restart us. Dying loudly beats idling silently.
  */
 let isReady = false;
-const readyTimer = setTimeout(() => {
+const readyTimer = setTimeout(async () => {
   if (isReady) return;
   log.error(`WhatsApp did not become ready within ${config.readyTimeoutSeconds}s — exiting so the service restarts`);
+  // Say what the page was showing, so a stuck start can be diagnosed rather than guessed at.
+  try {
+    const page = await Promise.race([
+      client.pupPage?.evaluate(() => ({
+        version: window.Debug?.VERSION || null,
+        store: !!window.Store,
+        wwebjs: !!window.WWebJS,
+        title: document.title,
+        text: (document.body?.innerText || '').replace(/\s+/g, ' ').slice(0, 300),
+      })),
+      new Promise((r) => setTimeout(() => r('page did not answer within 10s'), 10_000)),
+    ]);
+    log.error('stuck page:', JSON.stringify(page));
+  } catch (err) {
+    log.error('stuck page could not be read:', err.message);
+  }
   process.exit(1);
 }, config.readyTimeoutSeconds * 1000);
 
