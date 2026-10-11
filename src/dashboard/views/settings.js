@@ -2,6 +2,7 @@ import { html } from '../html.js';
 import { getSetting, setSetting, nextPo, auditTrail } from '../../landing/store.js';
 import { date, list } from '../forms.js';
 import { readHealth } from '../../health.js';
+import { lastBackup } from '../../backup/run.js';
 import { config } from '../../config.js';
 
 export function settingsPage(ctx) {
@@ -18,6 +19,14 @@ export function settingsPage(ctx) {
 <label for="ignored">Amazon shipments to ignore (FBA IDs, comma-separated)</label><input id="ignored" name="amazon_ignored_shipments" value="${ignored || ''}" style="width:100%">
 <p class="muted small">Shipments of stock that isn't new, such as units Amazon returned to you that you sent back in. Their cost was counted when they first shipped, so the Amazon check skips these shipments.</p>
 <button>Save</button></form>
+<h2>Backups</h2>
+${(() => {
+  const b = lastBackup(ctx.db);
+  if (!b) return html`<p class="muted small">No backup has run yet.</p>`;
+  return html`<dl class="working small"><dt>Last backup</dt><dd>${at(b.at)} ${b.ok ? '✓' : html`<span class="badge bad">failed: ${b.error || ''}</span>`}</dd>
+<dt>Copy kept</dt><dd>${b.offsite ? 'On this server and in Backblaze B2' : 'On this server only'}</dd>
+${b.offsite ? html`<dt>Last run</dt><dd>${b.uploaded} file(s) sent, ${b.documents} document(s) covered</dd>` : ''}</dl>`;
+})()}
 <h2>WhatsApp listener</h2>
 ${health ? html`<dl class="working small">
 <dt>Last heartbeat</dt><dd>${at(health.beatAt)}</dd>

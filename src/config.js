@@ -91,6 +91,8 @@ export const config = {
     passphrase: process.env.BACKUP_PASSPHRASE,
     dir: process.env.BACKUP_DIR || path.join(ROOT, 'data', 'backups'),
     keep: num(process.env.BACKUP_KEEP, 30),
+    // Off-server copy in Backblaze B2 (a key limited to this one bucket, read and write).
+    b2: { keyId: process.env.B2_KEY_ID, appKey: process.env.B2_APPLICATION_KEY, bucket: process.env.B2_BUCKET },
   },
 
   // Landing-cost records live apart from the listener's queue, so neither can corrupt the other.
