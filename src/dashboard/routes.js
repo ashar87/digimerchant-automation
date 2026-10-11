@@ -1,4 +1,4 @@
-import { inboxPage } from './views/inbox.js';
+import { inboxPage, dismissCheck, restoreCheck } from './views/inbox.js';
 import { ordersPage, createOrder, orderPage, editInvoicePage, saveInvoice, deleteInvoice, markReviewed, addWriteOff } from './views/orders.js';
 import { paymentsPage, paymentForm, savePayment, deletePayment } from './views/payments.js';
 import { shipmentsPage, shipmentForm, saveShipment, deleteShipment, ignoreShipmentForm } from './views/shipments.js';
@@ -20,6 +20,8 @@ const r = (method, path, handler) => ({ method, pattern: new RegExp(`^${path.rep
 
 export const routes = [
   r('GET', '/', inboxPage),
+  r('POST', '/inbox/dismiss', dismissCheck),
+  r('POST', '/inbox/restore', restoreCheck),
   r('GET', '/tasks', boardPage),
   r('GET', '/tasks/new', newTaskPage),
   r('POST', '/tasks', saveTaskForm),

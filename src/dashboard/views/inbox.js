@@ -1,5 +1,6 @@
 import { html } from '../html.js';
-import { getSetting } from '../../landing/store.js';
+import { HttpError } from '../errors.js';
+import { getSetting, setSetting } from '../../landing/store.js';
 import { refHref, enc } from './common.js';
 import { versionField } from '../versions.js';
 import { awaitingReply } from '../../notify/outbox.js';
@@ -26,8 +27,9 @@ export function inboxItems(ctx) {
   for (const i of result.issues.filter((x) => x.severity === 'error')) {
     items.push({ tone: 'error', title: i.message, href: refHref(ledger, i.ref), count: true });
   }
-  for (const i of result.issues.filter((x) => x.severity === 'warning')) {
-    items.push({ tone: 'warning', title: i.message, href: refHref(ledger, i.ref), count: true });
+  const dismissed = new Set(dismissedChecks(ctx.db).map((d) => d.message));
+  for (const i of result.issues.filter((x) => x.severity === 'warning' && !dismissed.has(x.message))) {
+    items.push({ tone: 'warning', title: i.message, href: refHref(ledger, i.ref), dismiss: i.message, count: true });
   }
   items.push(...inboxTaskItems(ctx.db));
   const sync = lastSync(ctx.db);
@@ -65,12 +67,47 @@ export function inboxItems(ctx) {
   return items;
 }
 
+/* ---------- dismissing a check you've looked at ---------- */
+
+// Warnings someone has looked at and decided don't matter (a few RMB of rounding, a
+// difference not worth chasing). Kept by exact wording: if the figures change, it's back.
+const DISMISSED = 'dismissed_checks';
+
+export function dismissedChecks(db) {
+  try {
+    return JSON.parse(getSetting(db, DISMISSED) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function saveDismissed(ctx, list) {
+  // Keep only what's still being raised, so the list doesn't grow forever.
+  const current = new Set(ctx.data.result.issues.map((i) => i.message));
+  setSetting(ctx.db, DISMISSED, JSON.stringify(list.filter((d) => current.has(d.message))), { actor: ctx.actor });
+}
+
+export function dismissCheck(ctx) {
+  const message = String(ctx.form.get('message') || '');
+  if (!ctx.data.result.issues.some((i) => i.severity === 'warning' && i.message === message)) throw new HttpError(400, 'That check is no longer raised, or can’t be dismissed.');
+  saveDismissed(ctx, [...dismissedChecks(ctx.db).filter((d) => d.message !== message), { message, by: ctx.actor, at: new Date().toISOString() }]);
+  return { redirect: '/?ok=Dismissed.+It+comes+back+if+the+figures+change.' };
+}
+
+export function restoreCheck(ctx) {
+  const message = String(ctx.form.get('message') || '');
+  saveDismissed(ctx, dismissedChecks(ctx.db).filter((d) => d.message !== message));
+  return { redirect: '/?ok=Back+in+the+Inbox.' };
+}
+
 export function inboxPage(ctx) {
   const { ledger, result } = ctx.data;
   const items = inboxItems(ctx);
   const needing = items.filter((i) => i.count);
   const notes = result.issues.filter((i) => i.severity === 'info');
   const waiting = result.shipments.filter((s) => !s.closed);
+  const current = new Set(result.issues.map((i) => i.message));
+  const dismissed = dismissedChecks(ctx.db).filter((d) => current.has(d.message));
 
   const body = html`
 <h1>${needing.length ? `${needing.length} thing${needing.length === 1 ? '' : 's'} need${needing.length === 1 ? 's' : ''} you` : 'Nothing needs you'}</h1>
@@ -81,11 +118,18 @@ ${items.length
       <div style="flex:1">${i.href ? html`<a href="${i.href}">${i.title}</a>` : i.title}${i.detail ? html`<div class="muted small">${i.detail}</div>` : ''}</div>
       ${i.review ? html`<form class="inline" method="post" action="/orders/${enc(i.review)}/review"><input type="hidden" name="back" value="/">${versionField(i.order)}<button class="ghost">Mark checked</button></form>` : ''}
       ${i.card ? html`<form class="inline" method="post" action="/cards/${i.card}/reply"><button name="reply" value="Y">Link</button> <button class="ghost" name="reply" value="N">Not this</button></form>` : ''}
+      ${i.dismiss ? html`<form class="inline" method="post" action="/inbox/dismiss"><input type="hidden" name="message" value="${i.dismiss}"><button class="ghost" title="Looked at it and it doesn't matter. It comes back if the figures change.">Dismiss</button></form>` : ''}
       ${i.shipment ? html`<form class="inline" method="post" action="/shipments/${enc(i.shipment.id)}/ignore"><input type="hidden" name="back" value="/">${versionField(i.shipment)}<button class="ghost" title="Old shipment with no PO, or returned stock: remove it and skip it from now on">Ignore</button></form>` : ''}</li>`
     )}</ul></div>`
   : ''}
 ${waiting.length
   ? html`<p class="muted small">Waiting on Amazon, nothing to do: ${waiting.map((s, i) => html`${i ? ', ' : ''}<a href="/shipments/${enc(s.id)}">${s.id}</a>`)}.</p>`
+  : ''}
+${dismissed.length
+  ? html`<details class="small"><summary>${dismissed.length} dismissed</summary><ul class="items">${dismissed.map(
+      (d) => html`<li><div style="flex:1">${d.message}<div class="muted">Dismissed by ${d.by}, ${new Date(d.at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</div></div>
+      <form class="inline" method="post" action="/inbox/restore"><input type="hidden" name="message" value="${d.message}"><button class="ghost">Put back</button></form></li>`
+    )}</ul></details>`
   : ''}
 ${notes.length
   ? html`<details><summary>${notes.length} note${notes.length === 1 ? '' : 's'}</summary><ul class="small">${notes.map((n) => html`<li>${n.message}</li>`)}</ul></details>`
