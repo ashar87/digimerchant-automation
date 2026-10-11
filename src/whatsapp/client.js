@@ -2,7 +2,7 @@ import pkg from 'whatsapp-web.js';
 import qrcode from 'qrcode-terminal';
 import { config } from '../config.js';
 import { log } from '../logger.js';
-import { clearStaleChromeLocks } from './session.js';
+import { clearStaleChromeLocks, clearWebAppCache } from './session.js';
 import { messageKey, widString } from './ids.js';
 
 const { Client, LocalAuth } = pkg;
@@ -17,7 +17,11 @@ export function createWhatsAppClient() {
   clearStaleChromeLocks(config.sessionPath);
   warnIfArmWithoutSystemChromium();
 
-  if (config.waWebVersion) log.info(`WhatsApp Web pinned to ${config.waWebVersion}`);
+  if (config.waWebVersion) {
+    // Otherwise the copy WhatsApp Web downloaded of its newest build overrides the pin.
+    const cleared = clearWebAppCache(config.sessionPath);
+    log.info(`WhatsApp Web pinned to ${config.waWebVersion}${cleared.length ? ` (cleared its cached app: ${cleared.join(', ')})` : ''}`);
+  }
   const client = new Client({
     authStrategy: new LocalAuth({ dataPath: config.sessionPath }),
     // strict: a missing page file stops the start loudly instead of quietly using the live version.

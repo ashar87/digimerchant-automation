@@ -43,3 +43,25 @@ function isAlive(pid) {
     return err.code === 'EPERM'; // exists but owned by someone else
   }
 }
+
+/**
+ * WhatsApp Web's own offline copy of its app (Service Worker cache, HTTP cache,
+ * compiled code). While it runs, WhatsApp Web quietly downloads its newest build
+ * into these, and the next start uses that instead of a pinned version, which
+ * defeats the pin. So when a version is pinned, they're cleared before each start.
+ * The login lives elsewhere in the profile (IndexedDB, Local Storage) and is kept.
+ */
+export const WEB_APP_CACHES = ['Service Worker', 'Cache', 'Code Cache'];
+
+export function clearWebAppCache(sessionPath) {
+  const profile = path.join(sessionPath, 'session', 'Default');
+  const cleared = [];
+  for (const dir of WEB_APP_CACHES) {
+    const p = path.join(profile, dir);
+    if (fs.existsSync(p)) {
+      fs.rmSync(p, { recursive: true, force: true });
+      cleared.push(dir);
+    }
+  }
+  return cleared;
+}
