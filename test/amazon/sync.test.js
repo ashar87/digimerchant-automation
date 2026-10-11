@@ -192,16 +192,16 @@ test('no shortfall card while Amazon lists SKUs that are not in the product list
   assert.ok(!kinds.includes('shortfall'), `unexpected shortfall card: ${kinds}`);
 });
 
-test('SKUs set to ignore are left out, and a shipment of only those is not recorded', async () => {
+test('shipments set to ignore are skipped whole; the same SKU elsewhere still counts', async () => {
   const db = openLandingDb(':memory:');
   saveLedger(db, { products: [{ id: 'A-US', code: 'A', marketplace: 'US', sku: 'SKU-A' }] }, { actor: 'test' });
-  db.prepare("INSERT INTO settings (key, value) VALUES ('amazon_ignored_skus', 'returned-1, OTHER')").run();
+  db.prepare("INSERT INTO settings (key, value) VALUES ('amazon_ignored_shipments', 'fba-r, FBA-OTHER')").run();
   const client = recordedSpApi({
     shipments: { US: [shipment('FBA-R', 'WORKING'), shipment('FBA-M', 'WORKING')] },
-    items: { 'FBA-R': [item('RETURNED-1', 44, 0)], 'FBA-M': [item('SKU-A', 100, 0), item('returned-1', 5, 0)] },
+    items: { 'FBA-R': [item('SKU-A', 44, 0)], 'FBA-M': [item('SKU-A', 100, 0)] },
   });
   const report = await syncAmazon({ db, client, now: new Date('2026-10-10T08:00:00Z') });
   assert.deepEqual(report.created, ['FBA-M']);
-  assert.deepEqual(report.unmapped, []);
-  assert.deepEqual(loadLedger(db).shipments.find((s) => s.id === 'FBA-M').items.map((i) => i.product), ['A-US']);
+  assert.equal(loadLedger(db).shipments.find((s) => s.id === 'FBA-R'), undefined);
+  assert.ok(!client.calls.some((c) => c[0] === 'getShipmentItems' && c[2] === 'FBA-R'));
 });

@@ -35,8 +35,8 @@ export async function syncAmazon({ db, client, now = new Date(), actor = 'amazon
   const changed = [];
   const events = [];
   const unmappedByShipment = new Map();
-  // SKUs set aside on the Settings page (e.g. returned stock sent back in, already costed).
-  const ignored = new Set(String(getSetting(db, 'amazon_ignored_skus') || '').split(',').map((s) => s.trim().toUpperCase()).filter(Boolean));
+  // Shipments set aside on the Settings page (e.g. returned stock sent back in, already costed).
+  const ignored = new Set(String(getSetting(db, 'amazon_ignored_shipments') || '').split(',').map((s) => s.trim().toUpperCase()).filter(Boolean));
 
   // One query per region: Amazon answers a UK query with the DE shipments too
   // (and the other way round), so asking per marketplace saw each one twice.
@@ -54,6 +54,7 @@ export async function syncAmazon({ db, client, now = new Date(), actor = 'amazon
       for (const s of await client.getShipments(markets[0], { updatedAfter: since.toISOString(), updatedBefore: until.toISOString() })) found.set(s.ShipmentId, s);
 
       for (const amazon of found.values()) {
+        if (ignored.has(String(amazon.ShipmentId).toUpperCase())) continue;
         report.checked++;
         const existing = ledger.shipments.find((x) => x.id === amazon.ShipmentId);
         const marketplace = existing?.marketplace || (markets.length === 1 ? markets[0] : marketplaceForWarehouse(amazon.DestinationFulfillmentCenterId, markets));
@@ -64,9 +65,7 @@ export async function syncAmazon({ db, client, now = new Date(), actor = 'amazon
         }
         if (!markets.includes(marketplace)) continue;
         if (existing && DONE.has(existing.status) && existing.status === amazon.ShipmentStatus) continue;
-        const all = await client.getShipmentItems(marketplace, amazon.ShipmentId);
-        const items = all.filter((it) => !ignored.has(String(it.SellerSKU || '').toUpperCase()));
-        if (!existing && all.length && !items.length) continue; // nothing but ignored stock: not a landing-cost shipment
+        const items = await client.getShipmentItems(marketplace, amazon.ShipmentId);
         const merged = mergeShipment({ existing, amazon, items, marketplace, ledger, today });
         changed.push(merged.shipment);
         events.push(...merged.events);
