@@ -1,4 +1,5 @@
 import { html, select, money } from '../html.js';
+import { documentsSection } from './files.js';
 import { saveLedger, deleteRecord } from '../../landing/store.js';
 import { computeLandingCosts } from '../../landing/engine.js';
 import { queueBillCards } from '../../notify/bills.js';
@@ -88,6 +89,7 @@ ${allocations.map((a) => html`<tr><td>${select('alloc_type', TYPES, a.type || 'o
 <label><input type="text" name="notes" value="${p?.notes || ''}" placeholder="Notes" style="width:100%"></label>
 <p><button>${p?.id ? 'Save payment' : 'Record payment'}</button></p>
 </form>
+${p?.id ? documentsSection(ctx, 'payment', p.id, { title: 'Receipts', back: `/payments/${enc(p.id)}`, hint: 'e.g. Wise receipt' }) : ''}
 ${p?.id ? html`<form method="post" action="/payments/${enc(p.id)}/delete">${versionField(p)}<button class="danger">Delete payment</button></form>${history(ctx, 'payment', p.id)}` : ''}`;
   return { title: p?.id || 'New payment', body };
 }

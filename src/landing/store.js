@@ -237,6 +237,21 @@ CREATE TABLE IF NOT EXISTS tasks (
   done_at      TEXT
 );
 
+-- Documents attached to records (src/files/attachments.js); files under data/files.
+CREATE TABLE IF NOT EXISTS attachments (
+  id          INTEGER PRIMARY KEY,
+  entity      TEXT NOT NULL CHECK (entity IN ('order','invoice','payment','courier_bill')),
+  entity_id   TEXT NOT NULL,
+  file        TEXT NOT NULL,
+  filename    TEXT NOT NULL,
+  mime        TEXT NOT NULL,
+  size        INTEGER NOT NULL,
+  note        TEXT,
+  uploaded_at TEXT NOT NULL,
+  uploaded_by TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_attachments_entity ON attachments(entity, entity_id);
+
 -- One row per Gemini call (src/ai/usage.js): tokens and what it cost, in USD.
 CREATE TABLE IF NOT EXISTS ai_usage (
   id              INTEGER PRIMARY KEY,

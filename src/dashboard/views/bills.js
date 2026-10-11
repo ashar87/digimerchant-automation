@@ -1,4 +1,5 @@
 import { html, select, rmb, money, unitCost } from '../html.js';
+import { documentsSection } from './files.js';
 import { saveLedger, deleteRecord } from '../../landing/store.js';
 import { computeLandingCosts } from '../../landing/engine.js';
 import { queueBillCards } from '../../notify/bills.js';
@@ -69,6 +70,7 @@ ${lines.map((l) => html`<tr><td>${select('line_kind', KINDS, l.kind || 'shipping
 <datalist id="shipments">${ledger.shipments.map((s) => html`<option value="${s.id}">`)}</datalist>
 <p class="muted small">Put domestic shipping on its own shipment’s line. Fees and adjustments with no shipment are shared by RMB share. The bill’s total and rate are checked against its lines.</p>
 <button>${bill ? 'Save bill' : 'Add bill'}</button></form>
+${bill ? documentsSection(ctx, 'courier_bill', bill.id, { title: 'The bill', back: `/bills/${enc(bill.id)}`, hint: 'e.g. Annie’s bill' }) : ''}
 ${bill ? html`<form method="post" action="/bills/${enc(bill.id)}/delete">${versionField(bill)}<button class="danger">Delete bill</button></form>${history(ctx, 'courier_bill', bill.id)}` : ''}`;
   return { title: bill ? bill.id : 'New courier bill', body };
 }

@@ -1,5 +1,6 @@
 import { html, raw, select, badge, statusBadge, rmb, units, pct, unitCost, money, BATCH_STATUS, PAID_STATUS, shipmentStatusLabel } from '../html.js';
 import { poTasksSection } from './tasks.js';
+import { documentsSection } from './files.js';
 import { saveLedger, nextPo, auditTrail } from '../../landing/store.js';
 import { currentInvoices } from '../../landing/engine.js';
 import { text, number, date, required, rows, compact, uniqueId } from '../forms.js';
@@ -231,9 +232,11 @@ ${batches.length
 ${poTasksSection(ctx, order.po)}
 
 <h2>Invoices${r.invoices.length > 1 ? html` <span class="muted small">· ${r.invoices.length} invoices on this PO, added together</span>` : ''}</h2>
-${invoiceSeries(order).map((g, i, all) => html`${all.length > 1 ? html`<h3>Invoice ${i + 1}: ${g.name}</h3>` : ''}${g.versions.map((inv) => invoiceCard(order, inv, g.inUse?.id === inv.id, ledger))}`)}
+${invoiceSeries(order).map((g, i, all) => html`${all.length > 1 ? html`<h3>Invoice ${i + 1}: ${g.name}</h3>` : ''}${g.versions.map((inv) => invoiceCard(ctx, order, inv, g.inUse?.id === inv.id, ledger))}`)}
 <details${order.invoices?.length ? '' : raw(' open')}><summary>${order.invoices?.length ? 'Add an invoice: a final or corrected version, or another invoice on this PO' : 'Add the proforma or invoice'}</summary>
 ${invoiceForm(ctx, order, null)}</details>
+
+${documentsSection(ctx, 'order', order.po, { back: `/orders/${enc(order.po)}`, hint: 'e.g. packing list, contract, photos of the goods' })}
 
 <h2>Write-offs</h2>
 <p class="muted small">Units that will never ship. Their cost moves to the units that did arrive.</p>
@@ -257,13 +260,19 @@ export function history(ctx, entity, id) {
   return html`<details class="small"><summary>History</summary><ul>${trail.map((a) => html`<li>${a.at.slice(0, 16).replace('T', ' ')} · ${a.actor} · ${a.action}</li>`)}</ul></details>`;
 }
 
-function invoiceCard(order, inv, inUse, ledger) {
+function invoiceCard(ctx, order, inv, inUse, ledger) {
   return html`<div class="card"><b>${inv.kind === 'final' ? 'Final invoice' : 'Proforma'}</b> ${inv.date || ''} ${inv.supplier ? html`· ${inv.supplier}` : ''} ${inv.supplierRef ? html`· supplier ref ${inv.supplierRef}` : ''}
   ${inUse ? badge(['In use', 'ok']) : html`<span class="muted small">replaced</span>`}
   <div class="scroll"><table><thead><tr><th>Kind</th><th>Product</th><th class="n">Qty</th><th class="n">RMB</th><th>Description</th></tr></thead><tbody>
   ${(inv.lines || []).map((l) => html`<tr><td>${l.kind}</td><td>${l.product ? productName(ledger, l.product) : ''}</td><td class="n">${l.qty ? units(l.qty) : ''}</td><td class="n">${rmb(l.rmb)}</td><td class="small">${l.description || ''}${l.category ? ` (${l.category})` : ''}</td></tr>`)}
   ${inv.statedTotalRmb ? html`<tr class="total"><td colspan="3">Invoice total</td><td class="n">${rmb(inv.statedTotalRmb)}</td><td></td></tr>` : ''}
   </tbody></table></div>
+  <div class="small" style="margin:6px 0">${documentsSection(ctx, 'invoice', inv.id, {
+    heading: false,
+    back: `/orders/${enc(order.po)}`,
+    hint: 'e.g. signed copy',
+    extra: inv.filePath ? [{ href: `/orders/${enc(order.po)}/invoices/${enc(inv.id)}/file`, label: 'Original invoice file', meta: 'as uploaded or forwarded' }] : [],
+  })}</div>
   <a href="/orders/${enc(order.po)}/invoices/${enc(inv.id)}">Edit</a>
   <form class="inline" method="post" action="/orders/${enc(order.po)}/invoices/${enc(inv.id)}/delete" style="margin-left:12px">${versionField(order)}<button class="danger">Delete</button></form></div>`;
 }

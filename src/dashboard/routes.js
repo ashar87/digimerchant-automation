@@ -12,6 +12,7 @@ import { runAmazonSync, replyToCard, messagesPage } from './views/amazon.js';
 import { wisePage, fetchWise, ignoreTransfer, lookupRate } from './views/wise.js';
 import { boardPage, newTaskPage, taskPage, saveTaskForm, moveTask, deleteTaskPage, deleteTaskForm } from './views/tasks.js';
 import { usagePage } from './views/usage.js';
+import { uploadFiles, fileView, removeFilePage, removeFile, invoiceFile } from './views/files.js';
 import { invoicesPage, uploadInvoice, draftPage, saveDraft, discardDraft, draftFile } from './views/invoices.js';
 
 const SEG = '([^/]+)';
@@ -34,9 +35,15 @@ export const routes = [
   r('POST', '/orders/:seg/review', markReviewed),
   r('POST', '/orders/:seg/write-offs', addWriteOff),
   r('POST', '/orders/:seg/invoices', saveInvoice),
+  r('GET', '/orders/:seg/invoices/:seg/file', invoiceFile),
   r('GET', '/orders/:seg/invoices/:seg', editInvoicePage),
   r('POST', '/orders/:seg/invoices/:seg/delete', deleteInvoice),
   r('POST', '/orders/:seg/invoices/:seg', saveInvoice),
+
+  r('POST', '/files', uploadFiles),
+  r('GET', '/files/:seg', fileView),
+  r('GET', '/files/:seg/remove', removeFilePage),
+  r('POST', '/files/:seg/remove', removeFile),
 
   r('GET', '/invoices', invoicesPage),
   r('POST', '/invoices/upload', uploadInvoice),
