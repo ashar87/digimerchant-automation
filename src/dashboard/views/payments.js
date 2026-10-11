@@ -117,7 +117,7 @@ ${allocations.map((a) => html`<tr><td>${select('alloc_type', TYPES, a.type || 'o
 <p><button>${p?.id ? 'Save payment' : 'Record payment'}</button></p>
 </form>
 ${p?.id ? documentsSection(ctx, 'payment', p.id, { title: 'Receipts', back: `/payments/${enc(p.id)}`, hint: 'e.g. Wise receipt' }) : ''}
-${p?.id ? html`<form method="post" action="/payments/${enc(p.id)}/delete">${versionField(p)}<button class="danger">Delete payment</button></form>${history(ctx, 'payment', p.id)}` : ''}`;
+${p?.id ? html`<form method="post" action="/payments/${enc(p.id)}/delete" data-confirm="Delete payment ${p.id}? What it paid for will show as unpaid again.">${versionField(p)}<button class="danger">Delete payment</button></form>${history(ctx, 'payment', p.id)}` : ''}`;
   return { title: p?.id || 'New payment', body };
 }
 

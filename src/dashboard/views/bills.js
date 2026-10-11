@@ -71,7 +71,7 @@ ${lines.map((l) => html`<tr><td>${select('line_kind', KINDS, l.kind || 'shipping
 <p class="muted small"><b>Required on each line you use:</b> the RMB; for shipping and domestic shipping, the FBA shipment; for an adjustment or expense, what it is. Put domestic shipping on its own shipment’s line. Fees and adjustments with no shipment are shared by RMB share. The bill’s total and rate are checked against its lines.</p>
 <button>${bill ? 'Save bill' : 'Add bill'}</button></form>
 ${bill ? documentsSection(ctx, 'courier_bill', bill.id, { title: 'The bill', back: `/bills/${enc(bill.id)}`, hint: 'e.g. Annie’s bill' }) : ''}
-${bill ? html`<form method="post" action="/bills/${enc(bill.id)}/delete">${versionField(bill)}<button class="danger">Delete bill</button></form>${history(ctx, 'courier_bill', bill.id)}` : ''}`;
+${bill ? html`<form method="post" action="/bills/${enc(bill.id)}/delete" data-confirm="Delete courier bill ${bill.id}? Its shipments go back to estimated delivery costs.">${versionField(bill)}<button class="danger">Delete bill</button></form>${history(ctx, 'courier_bill', bill.id)}` : ''}`;
   return { title: bill ? bill.id : 'New courier bill', body };
 }
 

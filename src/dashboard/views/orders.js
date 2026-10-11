@@ -1,8 +1,9 @@
 import { html, raw, select, badge, statusBadge, rmb, units, pct, unitCost, money, BATCH_STATUS, PAID_STATUS, shipmentStatusLabel } from '../html.js';
 import { poTasksSection } from './tasks.js';
 import { documentsSection } from './files.js';
-import { listAttachments } from '../../files/attachments.js';
-import { saveLedger, nextPo, auditTrail } from '../../landing/store.js';
+import { listAttachments, removeAttachment } from '../../files/attachments.js';
+import { tasksForPo, saveTask } from '../../tasks/board.js';
+import { saveLedger, nextPo, auditTrail, deleteRecord } from '../../landing/store.js';
 import { currentInvoices } from '../../landing/engine.js';
 import { text, number, date, required, rows, compact, uniqueId } from '../forms.js';
 import { HttpError } from '../errors.js';
@@ -246,6 +247,8 @@ ${(order.writeOffs || []).length ? html`<ul>${order.writeOffs.map((w) => html`<l
 <div><label>Units</label><input name="qty" inputmode="decimal" required></div>
 <div><label>Reason (required)</label><input name="reason" required></div></div><button class="ghost">Write off</button></form>
 
+<form method="post" action="/orders/${enc(order.po)}/delete" data-confirm="Delete ${order.po} with its invoices, write-offs and documents? This can't be undone.">${versionField(order)}<button class="danger">Delete this PO</button>
+<span class="muted small">Only for a PO created by mistake. Payments and shipments must be deleted or moved first.</span></form>
 ${history(ctx, 'order', order.po)}`;
   return { title: order.po, body };
 }
@@ -312,7 +315,7 @@ function invoiceCard(ctx, order, inv, inUse, ledger, paid = '') {
     extra: inv.filePath ? [{ href: `/orders/${enc(order.po)}/invoices/${enc(inv.id)}/file`, label: 'Original invoice file', meta: 'as uploaded or forwarded' }] : [],
   })}</div>
   <a href="/orders/${enc(order.po)}/invoices/${enc(inv.id)}">Edit</a>
-  <form class="inline" method="post" action="/orders/${enc(order.po)}/invoices/${enc(inv.id)}/delete" style="margin-left:12px">${versionField(order)}<button class="danger">Delete</button></form></div>`;
+  <form class="inline" method="post" action="/orders/${enc(order.po)}/invoices/${enc(inv.id)}/delete" style="margin-left:12px" data-confirm="Delete this ${inv.kind === 'final' ? 'final invoice' : 'proforma'} from ${order.po}?">${versionField(order)}<button class="danger">Delete</button></form></div>`;
 }
 
 export function invoiceForm(ctx, order, inv, { action, submit, head = '', version } = {}) {
@@ -412,7 +415,31 @@ export function deleteInvoice(ctx) {
   const order = structuredClone(current);
   order.invoices = (order.invoices || []).filter((i) => i.id !== ctx.params[1]);
   saveLedger(ctx.db, { orders: [order] }, { actor: ctx.actor });
+  for (const a of listAttachments(ctx.db, 'invoice', ctx.params[1])) removeAttachment(ctx.db, a.id, { actor: ctx.actor });
   return { redirect: `/orders/${enc(order.po)}?ok=Invoice+deleted.` };
+}
+
+/**
+ * Deletes a PO created by mistake, with its invoices, write-offs and documents.
+ * Refused while payments or shipments still point at it: delete or move those
+ * first, so no money or stock is left pointing at nothing. Linked tasks are kept, unlinked.
+ */
+export function deleteOrder(ctx) {
+  const order = findOrder(ctx, ctx.params[0]);
+  const back = `/orders/${enc(order.po)}`;
+  assertFresh(ctx, 'order', order.po, order, back);
+  const { ledger } = ctx.data;
+  const payments = ledger.payments.filter((p) => p.allocations.some((a) => a.type === 'order' && a.target === order.po)).map((p) => p.id);
+  const shipments = ledger.shipments.filter((s) => s.items.some((i) => i.po === order.po)).map((s) => s.id);
+  if (payments.length || shipments.length) {
+    const what = [payments.length && `payment${payments.length === 1 ? '' : 's'} ${payments.join(', ')}`, shipments.length && `shipment${shipments.length === 1 ? '' : 's'} ${shipments.join(', ')}`].filter(Boolean).join(' and ');
+    throw Object.assign(new HttpError(400, `${order.po} can't be deleted while ${what} still point${payments.length + shipments.length === 1 ? 's' : ''} at it. Delete or change ${payments.length + shipments.length === 1 ? 'it' : 'those'} first.`), { back });
+  }
+  for (const inv of order.invoices || []) for (const a of listAttachments(ctx.db, 'invoice', inv.id)) removeAttachment(ctx.db, a.id, { actor: ctx.actor });
+  for (const a of listAttachments(ctx.db, 'order', order.po)) removeAttachment(ctx.db, a.id, { actor: ctx.actor });
+  for (const t of tasksForPo(ctx.db, order.po)) saveTask(ctx.db, { ...t, po: null }, { actor: ctx.actor, action: 'edit' });
+  deleteRecord(ctx.db, 'order', order.po, { actor: ctx.actor });
+  return { redirect: `/orders?ok=${enc(`${order.po} deleted.`)}` };
 }
 
 export function markReviewed(ctx) {

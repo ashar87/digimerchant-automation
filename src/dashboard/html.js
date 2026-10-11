@@ -175,6 +175,13 @@ document.querySelectorAll('table.rows').forEach(function (t) {
   sync();
 });
 
+/* Deletes ask first. */
+document.querySelectorAll('form[data-confirm]').forEach(function (form) {
+  form.addEventListener('submit', function (e) {
+    if (!window.confirm(form.getAttribute('data-confirm'))) e.preventDefault();
+  });
+});
+
 /* "At least one of these" (the amount sent: USD, GBP or EUR), and the QB rate a
    UK or DE order needs when it was paid from USD or EUR. */
 document.querySelectorAll('form').forEach(function (form) {

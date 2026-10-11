@@ -460,6 +460,9 @@ export function loadLedger(db) {
 }
 
 const DELETABLE = {
+  // An order goes with its invoices (their lines cascade) and write-offs. Callers
+  // refuse first while payments or shipments still point at it.
+  order: ['DELETE FROM write_offs WHERE po = ?', 'DELETE FROM invoices WHERE po = ?', 'DELETE FROM orders WHERE po = ?'],
   payment: 'DELETE FROM payments WHERE id = ?',
   courier_bill: 'DELETE FROM courier_bills WHERE id = ?',
   shipment: 'DELETE FROM shipments WHERE id = ?',
@@ -473,13 +476,14 @@ export function deleteRecord(db, entity, id, { actor }) {
   const before = findRecord(loadLedger(db), entity, id);
   if (!before) return false;
   db.transaction(() => {
-    db.prepare(sql).run(id);
+    for (const statement of [].concat(sql)) db.prepare(statement).run(id);
     db.prepare('INSERT INTO audit_log (at, actor, action, entity, entity_id, data) VALUES (?, ?, ?, ?, ?, ?)').run(new Date().toISOString(), actor, 'delete', entity, id, json(before));
   })();
   return true;
 }
 
 function findRecord(ledger, entity, id) {
+  if (entity === 'order') return ledger.orders.find((o) => o.po === id) || null;
   const list = { payment: ledger.payments, courier_bill: ledger.courierBills, shipment: ledger.shipments, product: ledger.products }[entity];
   return list.find((r) => r.id === id) || null;
 }

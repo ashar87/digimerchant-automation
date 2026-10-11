@@ -77,7 +77,7 @@ ${items.map((i) => html`<tr><td>${select('item_product', productOptions(ledger, 
 <p><label style="display:inline;color:inherit"><input type="checkbox" name="sellerboardManual" value="1"${s?.sellerboardManual ? ' checked' : ''}> Its cost was typed into Sellerboard by hand — keep it out of the feed</label></p>
 <button>${s ? 'Save shipment' : 'Add shipment'}</button></form>
 ${s && !s.items.some((i) => i.po) ? html`<form class="card" method="post" action="/shipments/${enc(s.id)}/ignore">${versionField(s)}<p class="small" style="margin-top:0">No PO? If this is an old shipment from before the dashboard, or returned stock sent back in, ignore it: it's removed here and the Amazon check won't bring it back.</p><button class="ghost">Ignore this shipment</button></form>` : ''}
-${s ? html`<form method="post" action="/shipments/${enc(s.id)}/delete">${versionField(s)}<button class="danger">Delete shipment</button></form>${history(ctx, 'shipment', s.id)}` : ''}`;
+${s ? html`<form method="post" action="/shipments/${enc(s.id)}/delete" data-confirm="Delete shipment ${s.id} from the dashboard? Its costs go with it.">${versionField(s)}<button class="danger">Delete shipment</button></form>${history(ctx, 'shipment', s.id)}` : ''}`;
   return { title: s ? s.id : 'New shipment', body };
 }
 

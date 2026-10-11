@@ -39,7 +39,7 @@ export function productPage(ctx) {
   return {
     title: p.id,
     body: html`<p class="muted small"><a href="/products">Products</a></p><h1>${p.id}</h1>${productForm(p)}
-<form method="post" action="/products/${enc(p.id)}/delete">${versionField(p)}<button class="danger">Delete product</button></form>`,
+<form method="post" action="/products/${enc(p.id)}/delete" data-confirm="Delete product ${p.id}?">${versionField(p)}<button class="danger">Delete product</button></form>`,
   };
 }
 
