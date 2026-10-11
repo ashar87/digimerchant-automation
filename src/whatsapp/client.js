@@ -17,8 +17,11 @@ export function createWhatsAppClient() {
   clearStaleChromeLocks(config.sessionPath);
   warnIfArmWithoutSystemChromium();
 
+  if (config.waWebVersion) log.info(`WhatsApp Web pinned to ${config.waWebVersion}`);
   const client = new Client({
     authStrategy: new LocalAuth({ dataPath: config.sessionPath }),
+    // strict: a missing page file stops the start loudly instead of quietly using the live version.
+    ...(config.waWebVersion ? { webVersion: config.waWebVersion, webVersionCache: { type: 'local', path: config.waWebCachePath, strict: true } } : {}),
     puppeteer: {
       headless: true,
       // On a server, install the distro's chromium and point at it — apt pulls in

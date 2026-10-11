@@ -98,6 +98,10 @@ export const config = {
   dashboardUrl: process.env.DASHBOARD_URL || null,
   landingDbPath: process.env.LANDING_DB_PATH || path.join(ROOT, 'data', 'landing.db'),
   sessionPath: path.join(ROOT, 'data', 'wa-session'),
+  // Pin WhatsApp Web to a version the library can drive, served from data/wa-web/<version>.html.
+  // For when WhatsApp ships a build whose internals whatsapp-web.js can't reach yet. Blank = live.
+  waWebVersion: process.env.WA_WEB_VERSION || null,
+  waWebCachePath: path.join(ROOT, 'data', 'wa-web'),
   mediaCachePath: path.join(ROOT, 'data', 'media'),
 };
 
