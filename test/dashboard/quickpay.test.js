@@ -36,6 +36,10 @@ test('Pay deposit fills in 30% of the invoice; once paid, Pay balance fills in t
 
     order = await page('/orders/PO-030');
     assert.match(order, /part=balance">Pay balance/);
+    // Payments live inside the invoice they pay; there's no separate section.
+    assert.doesNotMatch(order, /<h2>Payments/);
+    assert.match(order, /<div class="paid"><h3>Paid<\/h3>[\s\S]*<b>Deposit<\/b> · \$420\.00 · 3,000 RMB[\s\S]*no receipt yet/);
+    assert.match(order, /\$420\.00 paid · for 3,000 of 10,000 RMB · 7,000 RMB outstanding · rate ≈ 7\.14 RMB per \$/);
     assert.doesNotMatch(order, /Pay deposit/);
     const balance = await page('/payments/new?po=PO-030&part=balance');
     assert.match(balance, /7,000 RMB \(what’s still unpaid\)/);

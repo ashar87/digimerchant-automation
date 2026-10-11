@@ -1,6 +1,7 @@
 import { html, raw, select, badge, statusBadge, rmb, units, pct, unitCost, money, BATCH_STATUS, PAID_STATUS, shipmentStatusLabel } from '../html.js';
 import { poTasksSection } from './tasks.js';
 import { documentsSection } from './files.js';
+import { listAttachments } from '../../files/attachments.js';
 import { saveLedger, nextPo, auditTrail } from '../../landing/store.js';
 import { currentInvoices } from '../../landing/engine.js';
 import { text, number, date, required, rows, compact, uniqueId } from '../forms.js';
@@ -185,7 +186,8 @@ export function orderPage(ctx) {
   const body = html`
 <p class="muted small"><a href="/orders">Orders</a></p>
 <h1>${order.po} · ${order.supplier} · ${order.marketplace}</h1>
-<p>${badge(PAID_STATUS[r.paidStatus])}
+<p class="small" style="margin:4px 0">${badge(PAID_STATUS[r.paidStatus])} ${moneyLine(r)}</p>
+<p>
 ${order.review === 'needs_review'
   ? html` ${badge(['Imported, to check', 'warn'])} <form class="inline" method="post" action="/orders/${enc(order.po)}/review">${versionField(order)}<button class="ghost">Mark checked</button></form>`
   : ''}</p>
@@ -207,17 +209,6 @@ ${order.importNotes?.length
 ${r.lines.some((l) => l.projected) ? html`<p class="muted small">* Only the deposit is paid, so the full cost is projected at the deposit’s rate.</p>` : ''}
 </div>
 
-<h2>Payments ${r.paidStatus === 'paid' ? html`<span class="muted small">· fully paid</span>` : ''}</h2>
-<div class="card scroll"><table>
-<thead><tr><th>Date</th><th>Payment</th><th>Reference</th><th>Part</th><th class="n key">${cur}</th><th class="n">RMB</th></tr></thead>
-<tbody>${r.payments.map((p) => html`<tr><td>${p.date}</td><td><a href="/payments/${enc(p.payment)}">${p.payment}</a></td><td>${p.reference || ''}</td><td>${p.part || ''}</td><td class="n">${money(p.amount, cur)}</td><td class="n">${rmb(p.rmb)}</td></tr>`)}
-<tr class="total"><td colspan="4">Total</td><td class="n">${money(r.cash, cur)}</td><td class="n">${rmb(r.paidRmb)}</td></tr></tbody></table>
-<p>${r.paidStatus === 'paid'
-  ? html`<a href="/payments/new?po=${enc(order.po)}">Record another payment</a>`
-  : r.paidStatus === 'deposit_paid'
-    ? html`<a class="button" href="/payments/new?po=${enc(order.po)}&amp;part=balance">Pay balance</a> <a href="/payments/new?po=${enc(order.po)}" style="margin-left:10px">Other payment</a>`
-    : html`<a class="button" href="/payments/new?po=${enc(order.po)}&amp;part=deposit">Pay deposit</a> <a class="button ghost" href="/payments/new?po=${enc(order.po)}&amp;part=full" style="margin-left:6px">Pay in full</a> <a href="/payments/new?po=${enc(order.po)}" style="margin-left:10px">Other payment</a>`}</p></div>
-
 <h2>Shipments from this order</h2>
 ${shipments.length
   ? html`<div class="card scroll"><table><thead><tr><th>Shipment</th><th>Status</th><th class="n">Shipped</th><th class="n">Received</th><th class="n key">Delivery / unit</th></tr></thead><tbody>${shipments.map((s) => {
@@ -236,7 +227,8 @@ ${batches.length
 ${poTasksSection(ctx, order.po)}
 
 <h2>Invoices${r.invoices.length > 1 ? html` <span class="muted small">· ${r.invoices.length} invoices on this PO, added together</span>` : ''}</h2>
-${invoiceSeries(order).map((g, i, all) => html`${all.length > 1 ? html`<h3>Invoice ${i + 1}: ${g.name}</h3>` : ''}${g.versions.map((inv) => invoiceCard(ctx, order, inv, g.inUse?.id === inv.id, ledger))}`)}
+${invoiceSeries(order).map((g, i, all) => html`${all.length > 1 ? html`<h3>Invoice ${i + 1}: ${g.name}</h3>` : ''}${g.versions.map((inv) => invoiceCard(ctx, order, inv, g.inUse?.id === inv.id, ledger, all.length === 1 && g.inUse?.id === inv.id ? paidPanel(ctx, order, r) : ''))}`)}
+${invoiceSeries(order).length > 1 || (!order.invoices?.length && r.payments.length) ? html`<div class="card">${paidPanel(ctx, order, r, { several: invoiceSeries(order).length > 1 })}</div>` : ''}
 <form class="card" method="post" action="/invoices/upload" enctype="multipart/form-data"><input type="hidden" name="po" value="${order.po}">
 <label for="inv-file"><b>${order.invoices?.length ? 'Upload an invoice: the final, a corrected version, or another invoice on this PO' : 'Upload the proforma or invoice'}</b> (Excel, PDF or photo)</label>
 <input id="inv-file" type="file" name="file" required accept=".xlsx,.pdf,.jpg,.jpeg,.png,.webp,.heic">
@@ -262,19 +254,57 @@ export function working(batch) {
   return html`<dl class="working">${batch.working.map((s) => html`<dt>${s.label}</dt><dd>${s.text}</dd>`)}</dl>`;
 }
 
+/** The order's money in one line: paid, against how much, what's left, at what rate. */
+function moneyLine(r) {
+  const cur = r.currency;
+  const bits = [];
+  if (r.cash !== null && r.cash !== undefined && r.payments.length) bits.push(`${money(r.cash, cur)} paid`);
+  if (r.paidRmb !== null && r.paidRmb !== undefined && r.totalRmb !== null && r.totalRmb !== undefined) {
+    bits.push(`for ${rmb(r.paidRmb)} of ${rmb(r.totalRmb)} RMB`);
+    const left = r.totalRmb.minus(r.paidRmb);
+    if (left.gt(0) && r.paidStatus !== 'paid') bits.push(`${rmb(left)} RMB outstanding`);
+  } else if (r.totalRmb !== null && r.totalRmb !== undefined && !r.payments.length) bits.push(`${rmb(r.totalRmb)} RMB invoiced, nothing paid yet`);
+  if (r.paidRmb?.gt(0) && r.cash?.gt(0)) bits.push(`rate ≈ ${r.paidRmb.div(r.cash).toFixed(2)} RMB per ${cur === 'GBP' ? '£' : '$'}`);
+  if (r.paidStatus === 'deposit_paid' && r.costBasis) bits.push(`full cost projected at ${money(r.costBasis, cur)}`);
+  return bits.join(' · ');
+}
+
+/** What's been paid against the order, inside the invoice it pays, with the next payment's button. */
+function paidPanel(ctx, order, r, { several = false } = {}) {
+  const cur = r.currency;
+  const po = enc(order.po);
+  const receipts = (id) => listAttachments(ctx.db, 'payment', id).length;
+  const button =
+    r.paidStatus === 'paid'
+      ? html`<a href="/payments/new?po=${po}">Record another payment</a>`
+      : r.paidStatus === 'deposit_paid'
+        ? html`<a class="button" href="/payments/new?po=${po}&amp;part=balance">Pay balance</a> <a href="/payments/new?po=${po}" style="margin-left:10px">Other payment</a>`
+        : order.invoices?.length
+          ? html`<a class="button" href="/payments/new?po=${po}&amp;part=deposit">Pay deposit</a> <a class="button ghost" href="/payments/new?po=${po}&amp;part=full" style="margin-left:6px">Pay in full</a> <a href="/payments/new?po=${po}" style="margin-left:10px">Other payment</a>`
+          : html`<a href="/payments/new?po=${po}">Record a payment</a>`;
+  return html`<div class="paid"><h3>${several ? `Paid against ${order.po} (all its invoices)` : 'Paid'}</h3>
+${r.payments.length
+  ? html`<ul class="docs">${r.payments.map((p) => html`<li><a href="/payments/${enc(p.payment)}">${p.date}</a> · ${p.part ? html`<b>${p.part[0].toUpperCase() + p.part.slice(1)}</b>` : 'Payment'} · ${money(p.amount, cur)}${p.rmb && !p.rmb.isNaN?.() ? html` · ${rmb(p.rmb)} RMB` : ''}
+  <span class="muted small">${p.reference || ''}${receipts(p.payment) ? ` · ${receipts(p.payment)} receipt${receipts(p.payment) === 1 ? '' : 's'}` : ' · no receipt yet'}</span></li>`)}</ul>`
+  : html`<p class="muted small">Nothing paid yet.</p>`}
+<p>${button}</p></div>`;
+}
+
 export function history(ctx, entity, id) {
   const trail = auditTrail(ctx.db, { entity, id, limit: 10 });
   if (!trail.length) return '';
   return html`<details class="small"><summary>History</summary><ul>${trail.map((a) => html`<li>${a.at.slice(0, 16).replace('T', ' ')} · ${a.actor} · ${a.action}</li>`)}</ul></details>`;
 }
 
-function invoiceCard(ctx, order, inv, inUse, ledger) {
+function invoiceCard(ctx, order, inv, inUse, ledger, paid = '') {
   return html`<div class="card"><b>${inv.kind === 'final' ? 'Final invoice' : 'Proforma'}</b> ${inv.date || ''} ${inv.supplier ? html`· ${inv.supplier}` : ''} ${inv.supplierRef ? html`· supplier ref ${inv.supplierRef}` : ''}
   ${inUse ? badge(['In use', 'ok']) : html`<span class="muted small">replaced</span>`}
   <div class="scroll"><table><thead><tr><th>Kind</th><th>Product</th><th class="n">Qty</th><th class="n">RMB</th><th>Description</th></tr></thead><tbody>
   ${(inv.lines || []).map((l) => html`<tr><td>${l.kind}</td><td>${l.product ? productName(ledger, l.product) : ''}</td><td class="n">${l.qty ? units(l.qty) : ''}</td><td class="n">${rmb(l.rmb)}</td><td class="small">${l.description || ''}${l.category ? ` (${l.category})` : ''}</td></tr>`)}
   ${inv.statedTotalRmb ? html`<tr class="total"><td colspan="3">Invoice total</td><td class="n">${rmb(inv.statedTotalRmb)}</td><td></td></tr>` : ''}
   </tbody></table></div>
+  ${paid}
+  ${!inUse && invoiceSeries(order).length === 1 ? html`<p class="muted small">Payments show on the invoice in use.</p>` : ''}
   <div class="small" style="margin:6px 0">${documentsSection(ctx, 'invoice', inv.id, {
     heading: false,
     back: `/orders/${enc(order.po)}`,
