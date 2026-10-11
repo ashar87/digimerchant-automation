@@ -205,3 +205,17 @@ test('shipments set to ignore are skipped whole; the same SKU elsewhere still co
   assert.equal(loadLedger(db).shipments.find((s) => s.id === 'FBA-R'), undefined);
   assert.ok(!client.calls.some((c) => c[0] === 'getShipmentItems' && c[2] === 'FBA-R'));
 });
+
+test('a shipment cancelled before it was ever seen is not recorded; a known one that is cancelled is updated', async () => {
+  const db = openLandingDb(':memory:');
+  saveLedger(db, { products: [{ id: 'A-US', code: 'A', marketplace: 'US', sku: 'SKU-A' }], shipments: [{ id: 'FBA-K', marketplace: 'US', status: 'WORKING', items: [{ product: 'A-US', shipped: 10 }] }] }, { actor: 'test' });
+  const client = recordedSpApi({
+    shipments: { US: [shipment('FBA-C', 'CANCELLED'), shipment('FBA-D', 'DELETED'), shipment('FBA-K', 'CANCELLED')] },
+    items: { 'FBA-C': [item('SKU-A', 44, 0)], 'FBA-D': [item('SKU-A', 5, 0)], 'FBA-K': [item('SKU-A', 10, 0)] },
+  });
+  const report = await syncAmazon({ db, client, now: new Date('2026-10-10T08:00:00Z') });
+  assert.deepEqual(report.created, []);
+  assert.deepEqual(report.updated, ['FBA-K']);
+  assert.equal(loadLedger(db).shipments.find((s) => s.id === 'FBA-K').status, 'CANCELLED');
+  assert.ok(!unsent(db).some((c) => c.kind === 'link_request'));
+});

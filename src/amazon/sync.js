@@ -64,6 +64,8 @@ export async function syncAmazon({ db, client, now = new Date(), actor = 'amazon
           continue;
         }
         if (!markets.includes(marketplace)) continue;
+        // A plan cancelled before we ever saw it never carried stock: nothing to record or link.
+        if (!existing && (amazon.ShipmentStatus === 'CANCELLED' || amazon.ShipmentStatus === 'DELETED')) continue;
         if (existing && DONE.has(existing.status) && existing.status === amazon.ShipmentStatus) continue;
         const items = await client.getShipmentItems(marketplace, amazon.ShipmentId);
         const merged = mergeShipment({ existing, amazon, items, marketplace, ledger, today });
@@ -181,7 +183,8 @@ export function mergeShipment({ existing, amazon, items, marketplace, ledger, to
     if (linked.size) events.push({ type: 'linked_by_name', shipment: shipment.id, po: [...linked].join(', ') });
   }
   const toSplit = new Set(events.filter((e) => e.type === 'split_needed').map((e) => e.product));
-  if (shipment.items.some((i) => !i.po && !toSplit.has(i.product))) events.push({ type: 'needs_link', shipment: shipment.id });
+  const dead = status === 'CANCELLED' || status === 'DELETED';
+  if (!dead && shipment.items.some((i) => !i.po && !toSplit.has(i.product))) events.push({ type: 'needs_link', shipment: shipment.id });
 
   return { shipment, events, unmapped };
 }
