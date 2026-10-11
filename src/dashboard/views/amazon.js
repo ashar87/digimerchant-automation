@@ -44,7 +44,7 @@ export function messagesPage(ctx) {
   const cards = recent(ctx.db, 60);
   const body = html`
 <h1>Messages</h1>
-<p class="sub">Cards for the WhatsApp self-chat. The WhatsApp listener sends them; until it’s connected to this queue, they wait here.</p>
+<p class="sub">Cards for your WhatsApp self-chat. The listener sends new ones within a minute: questions one by one (answer with Y or N, or <b>Y #12</b>), other updates combined into one message.</p>
 ${cards.length ? cards.map((c) => html`<div class="card"><div class="muted small">${c.created_at.slice(0, 16).replace('T', ' ')} · ${c.kind.replace(/_/g, ' ')} · ${c.sent_at ? `sent ${c.sent_at.slice(0, 16).replace('T', ' ')}` : 'not sent yet'}${c.reply ? ` · answered ${c.reply} by ${c.replied_by}` : c.needs_reply ? ' · waiting for Y/N' : ''}</div>
 <pre style="white-space:pre-wrap;font:inherit;margin:6px 0 0">${c.text}</pre></div>`) : html`<p class="muted">Nothing yet.</p>`}`;
   return { title: 'Messages', body };

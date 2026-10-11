@@ -174,7 +174,24 @@ client.on('ready', async () => {
     log.info(`${pending.length} task(s) still awaiting your decision`);
     await approval.sendPendingList();
   }
+  await deliverCards();
 });
+
+/* Cards the dashboard queued (Amazon sync, bills, cost changes) go out from here, the one WhatsApp session. */
+let delivering = false;
+async function deliverCards() {
+  if (!isReady || delivering) return;
+  delivering = true;
+  try {
+    const n = await approval.deliverOutbox();
+    if (n) log.ok(`sent ${n} dashboard card(s) to the self-chat`);
+  } catch (err) {
+    log.error('could not send dashboard cards (will retry):', err.message);
+  } finally {
+    delivering = false;
+  }
+}
+setInterval(deliverCards, 60_000).unref();
 
 setInterval(() => {
   const n = store.expireStale(config.expirePendingDays * 86400_000);

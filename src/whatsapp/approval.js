@@ -2,11 +2,19 @@ import { config } from '../config.js';
 import { log } from '../logger.js';
 import * as store from '../store/db.js';
 import { addWhatsAppTask } from '../tasks/board.js';
+import { findByWaMessage, getCard } from '../notify/outbox.js';
+import { deliverOutbox, parseCardAnswer } from '../notify/deliver.js';
+import { applyCardReply } from '../amazon/links.js';
+import { createSpApi, spApiConfigured } from '../amazon/spapi.js';
 import { messageKey, widString } from './ids.js';
 import { shortDate } from '../util/time.js';
 
 /** IDs of messages this bot sent. They come back through message_create as fromMe. */
 const sentByBot = new Set();
+
+// Amazon, for writing the PO into a shipment's name when a link is answered here.
+let amazon;
+const amazonClient = () => (spApiConfigured(config.spapi) ? (amazon ??= createSpApi(config.spapi)) : null);
 
 export function createApprovalFlow(client) {
   /**
@@ -122,6 +130,26 @@ export function createApprovalFlow(client) {
         await applyDecision(candidate, parsed);
         return true;
       }
+      // …or one of the dashboard's questions (link this shipment to a PO?)
+      const card = findByWaMessage(store.landingDb(), messageKey(quoted.id));
+      if (card?.needs_reply) {
+        const parsed = parseVerb(body);
+        if (!parsed || parsed.verb === 'e') {
+          await send(`Didn't catch that. Reply *Y* or *N* to #${card.id}.`);
+          return true;
+        }
+        await answerCard(card, parsed.verb === 'y' ? 'Y' : 'N');
+        return true;
+      }
+    }
+
+    // A dashboard question answered by its number: "Y #12" / "N #12"
+    const answer = parseCardAnswer(body);
+    if (answer) {
+      const card = getCard(store.landingDb(), answer.id);
+      if (!card?.needs_reply) await send(`No question #${answer.id} waiting for an answer.`);
+      else await answerCard(card, answer.verb);
+      return true;
     }
 
     // 2. Explicit-ref form: "y A3" / "A3 y" / "e A3 new title"
@@ -199,6 +227,18 @@ export function createApprovalFlow(client) {
     }
   }
 
+  /** Answers a dashboard question exactly as the Inbox buttons do. */
+  async function answerCard(card, verb) {
+    try {
+      const out = await applyCardReply(store.landingDb(), card.id, verb, { actor: 'Ashar', client: amazonClient() });
+      log.ok(`answered #${card.id} ${verb}: ${out.message}`);
+      await send(`${out.ok ? '✅' : '⚠️'} #${card.id}: ${out.message}`);
+    } catch (err) {
+      log.error(`answer to #${card.id} failed:`, err.message);
+      await send(`⚠️ Couldn't record your answer to #${card.id}: ${err.message}`);
+    }
+  }
+
   async function sendPendingList() {
     const pending = store.listPending();
     if (!pending.length) return send('✨ Nothing pending — you are all caught up.');
@@ -208,17 +248,18 @@ export function createApprovalFlow(client) {
     return send([`📋 *${pending.length} awaiting your call*`, '', ...lines, '', 'Reply *Y <ref>* / *N <ref>*, or *Y all*.'].join('\n'));
   }
 
-  return { init, sendCard, handleReply, sendPendingList, send, selfChatId, isSelfChat, selfIds: () => selfIds, sentByBot };
+  return { init, sendCard, handleReply, sendPendingList, send, selfChatId, isSelfChat, selfIds: () => selfIds, sentByBot, deliverOutbox: () => deliverOutbox(store.landingDb(), send) };
 }
 
-const BOT_PREFIXES = ['🔔', '📋', '✅', '🗑️', '⚠️', '✨', '*Commands*', "Didn't catch that", 'No task [', 'Nothing pending', '['];
+const BOT_PREFIXES = ['🔔', '📋', '✅', '🗑️', '⚠️', '✨', '📦', '🔗', '✂️', '💷', '🧾', '🗒️', '*Commands*', "Didn't catch that", 'No task [', 'No question #', 'Nothing pending', '['];
 
 const HELP = `*Commands* (type these to yourself)
 *Y* / *N* — reply to a task card to add or skip it
 *E <new title>* — reply to a card to reword it, then add
 *Y A3* / *N A3* — decide a card by its ref without replying
 *Y all* / *N all* — clear the whole pending queue
-*pending* — list everything awaiting your call`;
+*pending* — list everything awaiting your call
+*Y #12* / *N #12* — answer a dashboard question (or reply to it with Y / N)`;
 
 function parseVerb(text) {
   const t = text.trim();
