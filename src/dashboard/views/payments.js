@@ -19,7 +19,7 @@ const TYPES = [
   { value: 'other', label: 'Other (not costed here)' },
 ];
 const PARTS = [
-  { value: '', label: '' },
+  { value: '', label: 'Choose…' },
   { value: 'deposit', label: 'Deposit' },
   { value: 'balance', label: 'Balance' },
   { value: 'full', label: 'Full payment' },
