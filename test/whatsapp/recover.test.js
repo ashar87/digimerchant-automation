@@ -34,9 +34,8 @@ test('a search row finds the voice notes around its time; each is then downloade
   const page = fakePage({ notes: [{ hash: 'H1', t: 1_760_280_060 }, { hash: 'H2', t: 1_760_280_090 }], downloads: { H1: { data: 'AAA', mimetype: 'audio/ogg; codecs=opus' }, H2: { data: 'BBB', mimetype: 'audio/ogg' } } });
   const recovered = [];
   const pass = () => recoverMissed({ page, store, log, transcribe: async (a, id) => `note ${id} (${a.mime})`, onRecovered: async (row, text) => recovered.push([row.hash, text]), onGaveUp: async () => assert.fail('nothing should be given up') });
-  await pass(); // turns the search into two rows
+  assert.equal(await pass(), 2); // the search becomes two rows, tried in the same pass
   assert.deepEqual(store.all.map((r) => r.hash), ['H1', 'H2']);
-  assert.equal(await pass(), 2);
   assert.deepEqual(recovered, [['H1', 'note H1 (audio/ogg)'], ['H2', 'note H2 (audio/ogg)']]);
   assert.deepEqual(store.all.map((r) => r.status), ['recovered', 'recovered']);
 });

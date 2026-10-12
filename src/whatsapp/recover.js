@@ -38,15 +38,17 @@ function findVoiceNotes(page, chatId, ts) {
  * One pass over the pending rows. `transcribe(attachment, id)` and
  * `onRecovered(row, text)` / `onGaveUp(row)` are the listener's.
  */
-export async function recoverMissed({ page, store, transcribe, onRecovered, onGaveUp, log, now = Date.now() }) {
+export async function recoverMissed({ page, store, transcribe, onRecovered, onGaveUp, log, now = Date.now(), again = true }) {
   let recovered = 0;
+  let searched = false;
   for (let row of store.pendingMissed()) {
     try {
       if (!row.hash) {
         const found = await findVoiceNotes(page, row.chat_id, row.ts);
         store.expandMissed(row, found.map((f) => f.hash).filter(Boolean));
         log.info(`looking again for voice notes around ${new Date(row.ts * 1000).toISOString()}: found ${found.length}`);
-        continue; // the rows it found are picked up on the next pass
+        searched = true;
+        continue; // the rows it found are tried straight after this pass
       }
       await findVoiceNotes(page, row.chat_id, row.ts); // make sure the message is loaded
       const r = await downloadByHash(page, row.hash);
@@ -72,5 +74,6 @@ export async function recoverMissed({ page, store, transcribe, onRecovered, onGa
       await onGaveUp(row);
     }
   }
+  if (searched && again) recovered += await recoverMissed({ page, store, transcribe, onRecovered, onGaveUp, log, now, again: false });
   return recovered;
 }
