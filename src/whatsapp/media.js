@@ -19,15 +19,28 @@
  */
 import { messageHash } from './ids.js';
 
+// WhatsApp Web can get into a state where a media download never answers (seen
+// 12 Oct 2026, after it reloaded itself mid-session). Without a limit each attempt
+// waited for Puppeteer's 180s protocol timeout; now it gives up and says so.
+export const PAGE_LIMIT_MS = 70_000;
+
 export async function downloadMediaDirect(msg) {
   const hash = messageHash(msg.id);
   if (!hash) return { reason: 'no-id', detail: 'the message has no id hash' };
-  return downloadByHash(msg.client.pupPage, hash).catch((err) => ({ reason: 'page-error', detail: String(err?.message || err).slice(0, 200) }));
+  return downloadByHash(msg.client.pupPage, hash);
 }
 
 /** The in-page download, by message hash. Shared with scripts/diagnose-media.js. */
-export function downloadByHash(page, hash) {
-  return page.evaluate(async (msgHash) => {
+export function downloadByHash(page, hash, { limitMs = PAGE_LIMIT_MS } = {}) {
+  let timer;
+  const gaveUp = new Promise((resolve) => {
+    timer = setTimeout(() => resolve({ reason: 'timeout', detail: `WhatsApp Web didn't answer within ${limitMs / 1000}s` }), limitMs);
+  });
+  const work = page
+    .evaluate(async (msgHash, stepMs) => {
+    // Each step inside the page gets its own limit, so a hang is named.
+    const within = (p, what) =>
+      Promise.race([p, new Promise((_, reject) => setTimeout(() => reject(Object.assign(new Error(`${what} took over ${stepMs / 1000}s`), { name: 'StepTimeout' })), stepMs))]);
     const explain = (e) => {
       if (!e) return 'falsy error';
       const props = [];
@@ -53,8 +66,9 @@ export function downloadByHash(page, hash) {
       // What the library does before decrypting: ask WhatsApp to resolve the media.
       if (m.mediaData && stage() !== 'RESOLVED') {
         try {
-          await m.downloadMedia({ downloadEvenIfExpensive: true, rmrReason: 1 });
+          await within(m.downloadMedia({ downloadEvenIfExpensive: true, rmrReason: 1 }), 'resolving the media');
         } catch (e) {
+          if (e?.name === 'StepTimeout') return { reason: 'timeout', detail: `stage ${stage()}: ${e.message}` };
           return { reason: 'resolve-failed', detail: `stage ${stage()}: ${explain(e)}` };
         }
       }
@@ -64,7 +78,7 @@ export function downloadByHash(page, hash) {
       let buffer;
       try {
         const mockQpl = { addAnnotations() { return this; }, addPoint() { return this; } };
-        buffer = await window.require('WAWebDownloadManager').downloadManager.downloadAndMaybeDecrypt({
+        buffer = await within(window.require('WAWebDownloadManager').downloadManager.downloadAndMaybeDecrypt({
           directPath: m.directPath,
           encFilehash: m.encFilehash,
           filehash: m.filehash,
@@ -77,8 +91,9 @@ export function downloadByHash(page, hash) {
           mimetype: m.mimetype,
           signal: new AbortController().signal,
           downloadQpl: mockQpl,
-        });
+        }), 'downloading and decrypting');
       } catch (e) {
+        if (e?.name === 'StepTimeout') return { reason: 'timeout', detail: `stage ${stage()}: ${e.message}` };
         return { reason: 'decrypt-failed', detail: `stage ${stage()}: ${explain(e)}` };
       }
       if (!buffer) return { reason: 'empty', detail: `stage ${stage()}: download returned nothing` };
@@ -98,5 +113,10 @@ export function downloadByHash(page, hash) {
     } catch (e) {
       return { reason: 'page-error', detail: explain(e) };
     }
-  }, hash);
+  }, hash, Math.floor(limitMs / 2) - 2000)
+    .catch((err) => ({ reason: 'page-error', detail: String(err?.message || err).slice(0, 200) }));
+  return Promise.race([work, gaveUp]).finally(() => clearTimeout(timer));
 }
+
+/** True for failures that mean WhatsApp Web itself is stuck, not this one message. */
+export const pageStuck = (r) => r?.reason === 'timeout' || (r?.reason === 'page-error' && /timed out/i.test(r.detail || ''));

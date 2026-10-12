@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { config } from '../config.js';
 import { log } from '../logger.js';
-import { downloadMediaDirect } from '../whatsapp/media.js';
+import { downloadMediaDirect, pageStuck } from '../whatsapp/media.js';
 
 fs.mkdirSync(config.mediaCachePath, { recursive: true });
 
@@ -65,6 +65,7 @@ export async function downloadAttachment(msg, described) {
   // broken on current WhatsApp Web (see src/whatsapp/media.js).
   let media;
   let last = null;
+  let stuck = 0;
   for (let attempt = 1; attempt <= DOWNLOAD_ATTEMPTS; attempt++) {
     const r = await downloadMediaDirect(msg);
     if (r?.data) {
@@ -73,6 +74,9 @@ export async function downloadAttachment(msg, described) {
       break;
     }
     last = r;
+    // Twice stuck means WhatsApp Web itself is wedged: waiting longer won't help;
+    // the caller records it so it's retried after the listener reconnects.
+    if (pageStuck(r) && ++stuck >= 2) break;
     if (attempt < DOWNLOAD_ATTEMPTS) {
       const wait = DOWNLOAD_WAITS_MS[attempt - 1];
       log.warn(`download ${described.type}: ${r?.reason} (${r?.detail}) — retrying in ${Math.round(wait / 1000)}s (attempt ${attempt + 1}/${DOWNLOAD_ATTEMPTS})`);
@@ -80,6 +84,8 @@ export async function downloadAttachment(msg, described) {
     }
   }
   if (!media) {
+    described.downloadFailure = last;
+    described.downloadStuck = pageStuck(last);
     log.warn(`could not download ${described.type} from ${described.author}: ${last?.reason} (${last?.detail})`);
     if (described.type === 'ptt' || described.type === 'audio') {
       log.warn('  a voice note was missed. If the reason is not-ready or no-media-path, the sender’s phone');

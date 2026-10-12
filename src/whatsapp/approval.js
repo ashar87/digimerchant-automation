@@ -251,7 +251,7 @@ export function createApprovalFlow(client) {
   return { init, sendCard, handleReply, sendPendingList, send, selfChatId, isSelfChat, selfIds: () => selfIds, sentByBot, deliverOutbox: () => deliverOutbox(store.landingDb(), send) };
 }
 
-const BOT_PREFIXES = ['🔔', '📋', '✅', '🗑️', '⚠️', '✨', '📦', '🔗', '✂️', '💷', '🧾', '🗒️', '*Commands*', "Didn't catch that", 'No task [', 'No question #', 'Nothing pending', '['];
+const BOT_PREFIXES = ['🔔', '📋', '✅', '🗑️', '⚠️', '✨', '🔁', '📦', '🔗', '✂️', '💷', '🧾', '🗒️', '*Commands*', "Didn't catch that", 'No task [', 'No question #', 'Nothing pending', '['];
 
 const HELP = `*Commands* (type these to yourself)
 *Y* / *N* — reply to a task card to add or skip it

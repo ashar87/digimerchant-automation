@@ -2,6 +2,7 @@ import { log } from '../logger.js';
 import { downloadAttachment } from './download.js';
 import { transcribe } from './transcribe.js';
 import { sheetToText } from './documents.js';
+import { messageHash } from '../whatsapp/ids.js';
 
 /**
  * Turns a raw WhatsApp message into the shape the conversation buffer wants.
@@ -20,7 +21,7 @@ export async function toBufferMessage(msg, m) {
     if (m.body) return { ...base, body: m.body };
     // A voice note we couldn't fetch is a genuine gap: someone spoke and we have
     // no idea what they said. Report it rather than dropping it silently.
-    if (m.type === 'ptt' || m.type === 'audio') return { missed: 'voice note', author: m.author };
+    if (m.type === 'ptt' || m.type === 'audio') return { missed: 'voice note', author: m.author, hash: messageHash(msg.id), timestamp: m.timestamp, stuck: !!m.downloadStuck, reason: m.downloadFailure?.reason || null };
     return null;
   }
 

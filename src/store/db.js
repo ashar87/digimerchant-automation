@@ -178,4 +178,37 @@ export function isDuplicate(fingerprint, windowDays = 14) {
 }
 export const rememberFingerprint = (fingerprint, ref) => _addFp.run(fingerprint, ref, now());
 
+/* ---------- voice notes we couldn't read, retried later ---------- */
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS missed_media (
+  id          INTEGER PRIMARY KEY,
+  chat_id     TEXT NOT NULL,
+  author      TEXT,
+  ts          INTEGER NOT NULL,          -- message time, seconds
+  hash        TEXT,                      -- the message's id hash; NULL = find voice notes around ts
+  reason      TEXT,
+  attempts    INTEGER NOT NULL DEFAULT 0,
+  status      TEXT NOT NULL DEFAULT 'pending',  -- pending | recovered | given_up
+  created_at  INTEGER NOT NULL
+);
+`);
+
+export function recordMissed({ chatId, author = null, timestamp, hash = null, reason = null }) {
+  if (hash && db.prepare('SELECT 1 FROM missed_media WHERE hash = ?').get(hash)) return;
+  db.prepare('INSERT INTO missed_media (chat_id, author, ts, hash, reason, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(chatId, author, timestamp, hash, reason, now());
+}
+export const pendingMissed = () => db.prepare("SELECT * FROM missed_media WHERE status = 'pending' ORDER BY ts").all();
+export const settleMissed = (id, status) => db.prepare('UPDATE missed_media SET status = ? WHERE id = ?').run(status, id);
+export const triedMissed = (id, reason) => db.prepare('UPDATE missed_media SET attempts = attempts + 1, reason = ? WHERE id = ?').run(reason, id);
+/** A search row ("voice notes around this time") replaced by the notes it found. */
+export function expandMissed(row, hashes) {
+  db.transaction(() => {
+    for (const h of hashes) recordMissed({ chatId: row.chat_id, author: row.author, timestamp: row.ts, hash: h, reason: row.reason });
+    db.prepare('DELETE FROM missed_media WHERE id = ?').run(row.id);
+  })();
+}
+export const getMeta = (key) => _getMeta.get(key)?.value ?? null;
+export const setMeta = (key, value) => _setMeta.run(key, String(value));
+
 export default db;

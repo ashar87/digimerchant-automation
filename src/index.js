@@ -7,6 +7,8 @@ import { createApprovalFlow } from './whatsapp/approval.js';
 import { createBuffer } from './extract/buffer.js';
 import { extractTasks } from './extract/classifier.js';
 import { toBufferMessage } from './media/ingest.js';
+import { transcribe } from './media/transcribe.js';
+import { recoverMissed } from './whatsapp/recover.js';
 import { getProvider } from './providers/index.js';
 import * as store from './store/db.js';
 
@@ -85,6 +87,10 @@ client.on('message_create', async (msg) => {
     const buffered = await toBufferMessage(msg, m);
     if (!buffered) return;
     if (buffered.missed) {
+      if (buffered.hash) store.recordMissed({ chatId: m.chatId, author: buffered.author, timestamp: buffered.timestamp, hash: buffered.hash, reason: buffered.reason });
+      // WhatsApp Web wedged: restart to get a working one; the note is retried after
+      // reconnecting, and the outcome reported then (a gap alert now would be lost in the restart).
+      if (buffered.stuck && scheduleStuckRestart()) return;
       await reportGap(watched.label, buffered);
       return;
     }
@@ -129,8 +135,8 @@ async function reportGap(chatLabel, { missed, author }) {
     const plural = entry.count === 1 ? `a ${entry.missed}` : `${entry.count} ${entry.missed}s`;
     await approval.send(
       `⚠️ Couldn't read ${plural} from ${entry.author} in *${chatLabel}* since ${since}.\n\n` +
-        `Nothing from ${entry.count === 1 ? 'it' : 'them'} has been checked for tasks — worth a look yourself.\n` +
-        `Usual cause: your phone was offline, so it never re-uploaded the audio.`
+        `Nothing from ${entry.count === 1 ? 'it' : 'them'} has been checked for tasks yet. I'll keep retrying for two days and tell you if I get ${entry.count === 1 ? 'it' : 'them'}.\n` +
+        `Usual cause: the sender's phone was offline, so the audio wasn't uploaded yet.`
     ).catch((err) => log.error('could not send gap alert:', err.message));
   }, gapWindowMs);
   entry.timer.unref?.();
@@ -194,10 +200,65 @@ client.on('ready', async () => {
     await approval.sendPendingList();
   }
   await deliverCards();
+  setTimeout(retryMissed, 30_000);
   const now = new Date().toISOString();
   noteHealth({ readyAt: now, beatAt: now, version: await client.getWWebVersion().catch(() => null), pinned: config.waWebVersion });
   checkLibrary();
 });
+
+/* ---------- voice notes missed earlier ---------- */
+
+const MEDIA_RESTART_GAP_MS = 30 * 60_000;
+let restarting = false;
+
+/** Restart to recover from stuck downloads, at most once every 30 minutes. True if one is on its way. */
+function scheduleStuckRestart() {
+  if (restarting) return true;
+  const last = Number(store.getMeta('media_restart_at') || 0);
+  if (Date.now() - last < MEDIA_RESTART_GAP_MS) return false;
+  restarting = true;
+  store.setMeta('media_restart_at', Date.now());
+  log.warn('WhatsApp Web media downloads are stuck: restarting in a minute to recover, then retrying what was missed');
+  setTimeout(() => shutdown('stuck media downloads'), 60_000);
+  return true;
+}
+
+const when = (ts) => new Date(ts * 1000).toLocaleString('en-GB', { timeZone: config.timezone, day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+let retrying = false;
+async function retryMissed() {
+  if (!isReady || retrying || restarting) return;
+  retrying = true;
+  try {
+    await recoverMissed({
+      page: client.pupPage,
+      store,
+      transcribe,
+      log,
+      onRecovered: async (row, text) => {
+        const watched = chats.byId.get(row.chat_id);
+        if (!watched) return;
+        await approval.send(`🔁 Recovered the voice note from ${row.author || 'someone'} in *${watched.label}* (${when(row.ts)}), and checked it for tasks.`);
+        buffer.add(row.chat_id, {
+          chatLabel: watched.label,
+          chatContext: watched.context,
+          isGroup: row.chat_id.endsWith('@g.us'),
+          unknownAssignee: watched.unknownAssignee || null,
+          assignAllTo: watched.assignAllTo || null,
+          notionDatabaseId: watched.notionDatabaseId || null,
+        }, { author: row.author, timestamp: row.ts, body: text, isVoiceNote: true, attachments: [] });
+      },
+      onGaveUp: async (row) => {
+        const label = chats.byId.get(row.chat_id)?.label || 'a chat';
+        await approval.send(`⚠️ Still couldn't read the voice note from ${row.author || 'someone'} in *${label}* (${when(row.ts)}) after ${row.attempts} tries (${row.reason || 'no reason given'}). Worth listening to it yourself.`);
+      },
+    });
+  } catch (err) {
+    log.error('retrying missed voice notes:', err.message);
+  } finally {
+    retrying = false;
+  }
+}
+setInterval(retryMissed, 30 * 60_000).unref();
 
 /* ---------- health, for the dashboard's Inbox (WhatsApp can't report its own outage) ---------- */
 function noteHealth(patch) {
