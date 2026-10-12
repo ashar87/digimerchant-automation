@@ -53,7 +53,7 @@ export async function recoverMissed({ page, store, transcribe, onRecovered, onGa
       await findVoiceNotes(page, row.chat_id, row.ts); // make sure the message is loaded
       const r = await downloadByHash(page, row.hash);
       if (r?.data) {
-        const text = await transcribe({ kind: 'audio', mime: String(r.mimetype || 'audio/ogg').split(';')[0], data: r.data }, row.hash);
+        const text = await transcribe({ kind: 'audio', mime: String(r.mimetype || 'audio/ogg').split(';')[0], data: r.data, bytes: Buffer.byteLength(r.data, 'base64') }, row.hash);
         if (text) {
           store.settleMissed(row.id, 'recovered');
           recovered++;
