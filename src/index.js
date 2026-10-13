@@ -165,9 +165,20 @@ client.on('change_state', (s) => step(`state:${s}`));
   if (original) {
     client.attachEventListeners = async (...args) => {
       step('attachEventListeners');
-      const out = await original(...args);
-      step('attachEventListeners:done');
-      return out;
+      // Normally done in under a second. Seen hanging forever on 13 Oct 2026 (one of
+      // its page.exposeFunction calls never returns): restart now rather than at the
+      // ready timeout, since waiting doesn't help.
+      const hung = setTimeout(() => {
+        log.error(`WhatsApp start-up stuck attaching its listeners (steps: ${startupSteps.join(', ')}): restarting`);
+        process.exit(1);
+      }, 25_000);
+      try {
+        const out = await original(...args);
+        step('attachEventListeners:done');
+        return out;
+      } finally {
+        clearTimeout(hung);
+      }
     };
   }
   let info;
