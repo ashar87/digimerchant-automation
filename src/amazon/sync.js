@@ -8,6 +8,7 @@
  */
 import { loadLedger, saveLedger } from '../landing/store.js';
 import { ignoredShipments } from './ignored.js';
+import { LEDGER_REPORT, receiptsByShipment } from './ledger.js';
 import { computeLandingCosts } from '../landing/engine.js';
 import { D, sum } from '../landing/money.js';
 import { enqueue } from '../notify/outbox.js';
@@ -28,7 +29,7 @@ const SHORTFALL_SHARE = D('0.01');
  * Amazon updated recently). Off by default: Ashar wants only the shipments on
  * the dashboard kept up to date; new ones are added on the Shipments page.
  */
-export async function syncAmazon({ db, client, now = new Date(), actor = 'amazon-sync', lookbackDays = 90, discover = false }) {
+export async function syncAmazon({ db, client, now = new Date(), actor = 'amazon-sync', lookbackDays = 90, discover = false, ledgerDays = 120 }) {
   const ledger = loadLedger(db);
   const before = computeLandingCosts(ledger);
   const today = now.toISOString().slice(0, 10);
@@ -92,6 +93,27 @@ export async function syncAmazon({ db, client, now = new Date(), actor = 'amazon
 
   if (changed.length) saveLedger(db, { shipments: changed }, { actor });
   report.learned = saveLearnedSkus(db, learnedSkus, { actor });
+
+  // Exact receive dates from Amazon's inventory ledger: the check above only knows
+  // the day it first saw a shipment receiving, which can be a day or more late.
+  // A ledger that can't be fetched is a note, not a failed run.
+  report.dated = [];
+  if (client.report && ledgerDays > 0) {
+    const shipments = loadLedger(db).shipments;
+    for (const [region, markets] of regions) {
+      const mine = shipments.filter((s) => markets.includes(s.marketplace) && ['RECEIVING', 'CLOSED'].includes(s.status));
+      if (!mine.length) continue;
+      try {
+        const text = await client.report(markets[0], LEDGER_REPORT, { start: new Date(now.getTime() - ledgerDays * 86400_000).toISOString(), end: new Date(now.getTime() - 86400_000).toISOString() });
+        const receipts = receiptsByShipment(text);
+        const fixed = mine.filter((s) => receipts.has(s.id) && s.firstReceivedAt !== receipts.get(s.id).date).map((s) => ({ ...s, firstReceivedAt: receipts.get(s.id).date }));
+        if (fixed.length) saveLedger(db, { shipments: fixed }, { actor: 'amazon (inventory ledger)' });
+        report.dated.push(...fixed.map((s) => `${s.id} ${s.firstReceivedAt}`));
+      } catch (err) {
+        (report.notes ||= []).push(`${markets.join('/')} receive dates: ${err.message}`);
+      }
+    }
+  }
   const saveUnmapped = db.transaction(() => {
     for (const [shipmentId, rows] of unmappedByShipment) {
       db.prepare('DELETE FROM amazon_unmapped WHERE shipment_id = ?').run(shipmentId);

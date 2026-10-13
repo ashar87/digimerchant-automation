@@ -50,6 +50,8 @@ if (report.updated.length) console.log(`  Updated: ${report.updated.join(', ')}`
 if (report.linked.length) console.log(`  Linked by PO in the name: ${report.linked.join(', ')}`);
 if (report.unmapped.length) console.log(`  SKUs not in the product list: ${report.unmapped.join(', ')}`);
 if (report.learned?.length) console.log(`  Seller SKUs filled in from Amazon: ${report.learned.join(', ')}`);
+if (report.dated?.length) console.log(`  Receive dates set from Amazon's inventory ledger: ${report.dated.join(', ')}`);
+for (const n of report.notes || []) console.log(`  Note: ${n}`);
 for (const e of report.errors) console.log(`  ✗ ${e}`);
 const cards = unsent(db, 50);
 if (cards.length) {

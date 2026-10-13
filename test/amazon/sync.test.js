@@ -263,3 +263,38 @@ test('a product with no Seller SKU learns the one Amazon used for it (only when 
   assert.equal(p('B-UK').sku, undefined); // two SKUs: left for a person
   assert.equal(p('C-UK').sku, 'ALREADY'); // never overwritten
 });
+
+const LEDGER = [
+  '"Date"\t"FNSKU"\t"ASIN"\t"MSKU"\t"Title"\t"Event Type"\t"Reference ID"\t"Quantity"\t"Fulfillment Center"\t"Disposition"\t"Reason"\t"Country"\t"Reconciled Quantity"\t"Unreconciled Quantity"\t"Date and Time"',
+  '"09/30/2026"\t"X00A"\t"B0A"\t"SKU-A"\t"A"\t"Receipts"\t"FBA1RTEST"\t"60"\t"LBA4"\t"SELLABLE"\t""\t"GB"\t""\t""\t"2026-09-30T08:00:00+0100"',
+  '"09/28/2026"\t"X00A"\t"B0A"\t"SKU-A"\t"A"\t"Receipts"\t"FBA1RTEST"\t"40"\t"LBA4"\t"SELLABLE"\t""\t"GB"\t""\t""\t"2026-09-28T09:00:00+0100"',
+  '"09/29/2026"\t"X00A"\t"B0A"\t"SKU-A"\t"A"\t"Shipments"\t"204-123"\t"-1"\t"LBA4"\t"SELLABLE"\t""\t"GB"\t""\t""\t"2026-09-29T09:00:00+0100"',
+].join('\r\n');
+
+test('the inventory ledger gives each shipment its first receipt date and units', async () => {
+  const { receiptsByShipment } = await import('../../src/amazon/ledger.js');
+  assert.deepEqual(Object.fromEntries(receiptsByShipment(LEDGER)), { 'FBA1RTEST': { date: '2026-09-28', units: 100 } });
+});
+
+test('the sync sets receive dates from the ledger; a ledger it can’t get is a note, not a failure', async () => {
+  const setup = () => {
+    const db = openLandingDb(':memory:');
+    saveLedger(db, { products: [{ id: 'A-UK', code: 'A', marketplace: 'UK', sku: 'SKU-A' }], shipments: [{ id: 'FBA1RTEST', marketplace: 'UK', status: 'RECEIVING', firstReceivedAt: '2026-10-11', items: [{ product: 'A-UK', shipped: 100 }] }] }, { actor: 'test' });
+    return db;
+  };
+  const base = recordedSpApi({ shipments: { UK: [shipment('FBA1RTEST', 'RECEIVING')] }, items: { 'FBA1RTEST': [item('SKU-A', 100, 100)] } });
+
+  const db = setup();
+  const asked = [];
+  const report = await syncAmazon({ db, client: { ...base, report: async (m, type, opts) => (asked.push([m, type, opts.start.slice(0, 10)]), LEDGER) }, now: new Date('2026-10-13T06:00:00Z') });
+  assert.deepEqual(asked, [['UK', 'GET_LEDGER_DETAIL_VIEW_DATA', '2026-06-15']]);
+  assert.deepEqual(report.dated, ['FBA1RTEST 2026-09-28']);
+  assert.equal(loadLedger(db).shipments[0].firstReceivedAt, '2026-09-28');
+  assert.deepEqual(report.errors, []);
+
+  const db2 = setup();
+  const r2 = await syncAmazon({ db: db2, client: { ...base, report: async () => { throw new Error('403 Unauthorized'); } }, now: new Date('2026-10-13T06:00:00Z') });
+  assert.deepEqual(r2.errors, []);
+  assert.match(r2.notes.join(' '), /UK receive dates: 403 Unauthorized/);
+  assert.equal(loadLedger(db2).shipments[0].firstReceivedAt, '2026-10-11');
+});
