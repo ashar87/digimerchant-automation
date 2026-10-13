@@ -241,3 +241,25 @@ test('by default only shipments already in the dashboard are updated; Amazon is 
   assert.equal(loadLedger(db).shipments.find((s) => s.id === 'FBA-OTHER'), undefined);
   assert.deepEqual(client.calls.filter((c) => c[0] === 'getShipments').map((c) => c[2]), ['ids']);
 });
+
+test('a product with no Seller SKU learns the one Amazon used for it (only when unambiguous)', async () => {
+  const db = openLandingDb(':memory:');
+  saveLedger(db, {
+    products: [
+      { id: 'A-UK', code: 'A', marketplace: 'UK', fnsku: 'X00A' },
+      { id: 'B-UK', code: 'B', marketplace: 'UK', fnsku: 'X00B' },
+      { id: 'C-UK', code: 'C', marketplace: 'UK', sku: 'ALREADY', fnsku: 'X00C' },
+    ],
+    shipments: [{ id: 'FBA-L', marketplace: 'UK', status: 'WORKING', items: [] }],
+  }, { actor: 'test' });
+  const client = recordedSpApi({
+    shipments: { UK: [shipment('FBA-L', 'WORKING')] },
+    items: { 'FBA-L': [item('A-SKU', 10, 0, 'X00A'), item('B-ONE', 5, 0, 'X00B'), item('B-TWO', 5, 0, 'X00B'), item('C-NEW', 1, 0, 'X00C')] },
+  });
+  const report = await syncAmazon({ db, client, now: new Date('2026-10-13T06:00:00Z') });
+  assert.deepEqual(report.learned, ['A-UK A-SKU']);
+  const p = (id) => loadLedger(db).products.find((x) => x.id === id);
+  assert.equal(p('A-UK').sku, 'A-SKU');
+  assert.equal(p('B-UK').sku, undefined); // two SKUs: left for a person
+  assert.equal(p('C-UK').sku, 'ALREADY'); // never overwritten
+});

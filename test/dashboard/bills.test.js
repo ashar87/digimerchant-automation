@@ -71,3 +71,12 @@ test('ticking “typed into Sellerboard by hand” takes a shipment out of the f
   await post('/shipments/FBANEW1', { version: versionOf(loadLedger(db).shipments.find((s) => s.id === 'FBANEW1')), marketplace: 'UK', status: 'CLOSED', createdAt: '2026-01-10', firstReceivedAt: '2026-01-12', sellerboardManual: '1', item_product: 'A-UK', item_po: 'PO-1', item_shipped: '100', item_received: '100' });
   assert.match(await page('/sellerboard'), /0 rows for Sellerboard/);
 });
+
+test('the test download can include batches typed in by hand, and narrow to one shipment', async () => {
+  const csv = async (q) => (await fetch(`${base}/sellerboard.csv${q}`, { headers: { Cookie: 'actor=Ashar' } })).text();
+  assert.doesNotMatch(await csv(''), /FBANEW1/); // typed by hand: left out of the normal file
+  assert.match(await csv('?all=1'), /SKU-A,,Amazon\.co\.uk,2026-01-12,100,1\.2000,GBP,FBANEW1/);
+  assert.match(await csv('?all=1&shipment=FBANEW1'), /FBANEW1/);
+  assert.equal((await csv('?all=1&shipment=FBANOPE')).trim().split('\n').length, 1); // just the header
+  assert.match(await page('/sellerboard'), /Testing the import, or comparing/);
+});

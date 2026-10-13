@@ -31,7 +31,7 @@ const STATUS_WORDS = { final: 'final', count_pending: 'awaiting Amazon count', e
  * Splits batches into what Sellerboard gets and what's held back, with the
  * reason for each one held.
  */
-export function buildFeed(ledger, result) {
+export function buildFeed(ledger, result, { includeManual = false, shipment = null } = {}) {
   const shipments = new Map(ledger.shipments.map((s) => [s.id, s]));
   const products = new Map(ledger.products.map((p) => [p.id, p]));
   const orders = new Map(ledger.orders.map((o) => [o.po, o]));
@@ -39,11 +39,12 @@ export function buildFeed(ledger, result) {
   const held = [];
 
   for (const b of result.batches) {
+    if (shipment && b.shipment !== shipment) continue;
     const s = shipments.get(b.shipment);
     const p = products.get(b.product);
     const hold = (reason) => held.push({ shipment: b.shipment, product: b.product, code: b.code, marketplace: b.marketplace, reason });
 
-    if (s?.sellerboardManual) {
+    if (s?.sellerboardManual && !includeManual) {
       hold('Typed into Sellerboard by hand; the feed leaves it alone.');
       continue;
     }

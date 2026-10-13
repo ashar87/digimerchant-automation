@@ -41,6 +41,7 @@ export async function syncAmazon({ db, client, now = new Date(), actor = 'amazon
   const changed = [];
   const events = [];
   const unmappedByShipment = new Map();
+  const learnedSkus = new Map(); // product -> Seller SKUs Amazon used for it
   // Shipments set aside on the Settings page (e.g. returned stock sent back in, already costed).
   const ignored = ignoredShipments(db);
 
@@ -79,6 +80,7 @@ export async function syncAmazon({ db, client, now = new Date(), actor = 'amazon
         changed.push(merged.shipment);
         events.push(...merged.events);
         unmappedByShipment.set(merged.shipment.id, merged.unmapped);
+        for (const l of merged.learned) (learnedSkus.get(l.product) || learnedSkus.set(l.product, new Set()).get(l.product)).add(l.sku);
         (existing ? report.updated : report.created).push(merged.shipment.id);
         if (merged.events.some((e) => e.type === 'linked_by_name')) report.linked.push(merged.shipment.id);
         report.unmapped.push(...merged.unmapped.map((u) => `${merged.shipment.id} ${u.sku}`));
@@ -89,6 +91,7 @@ export async function syncAmazon({ db, client, now = new Date(), actor = 'amazon
   }
 
   if (changed.length) saveLedger(db, { shipments: changed }, { actor });
+  report.learned = saveLearnedSkus(db, learnedSkus, { actor });
   const saveUnmapped = db.transaction(() => {
     for (const [shipmentId, rows] of unmappedByShipment) {
       db.prepare('DELETE FROM amazon_unmapped WHERE shipment_id = ?').run(shipmentId);
@@ -109,6 +112,23 @@ export async function syncAmazon({ db, client, now = new Date(), actor = 'amazon
 }
 
 /**
+ * Fills in a product's Seller SKU from what Amazon used for it, when the product
+ * has none. Only when Amazon used exactly one SKU for it: two would be ambiguous.
+ * Sellerboard matches costs to products by SKU, so this feeds the cost file.
+ */
+export function saveLearnedSkus(db, learnedSkus, { actor }) {
+  const products = loadLedger(db).products;
+  const updates = [];
+  for (const [id, skus] of learnedSkus) {
+    const p = products.find((x) => x.id === id);
+    if (!p || p.sku || skus.size !== 1) continue;
+    updates.push({ ...p, sku: [...skus][0] });
+  }
+  if (updates.length) saveLedger(db, { products: updates }, { actor });
+  return updates.map((p) => `${p.id} ${p.sku}`);
+}
+
+/**
  * Amazon's view of one shipment merged into ours. Links to orders made by
  * hand are kept; a PO number in the shipment name links what isn't linked yet.
  */
@@ -121,8 +141,10 @@ export function mergeShipment({ existing, amazon, items, marketplace, ledger, to
 
   const byProduct = new Map();
   const unmapped = [];
+  const learned = []; // products with no Seller SKU on file, and the one Amazon used
   for (const it of items) {
     const p = findProduct(it);
+    if (p && !p.sku && it.SellerSKU) learned.push({ product: p.id, sku: it.SellerSKU });
     if (!p) {
       unmapped.push({ marketplace, sku: it.SellerSKU, fnsku: it.FulfillmentNetworkSKU || null, shipped: String(it.QuantityShipped ?? 0), received: String(it.QuantityReceived ?? 0) });
       continue;
@@ -193,7 +215,7 @@ export function mergeShipment({ existing, amazon, items, marketplace, ledger, to
   const dead = status === 'CANCELLED' || status === 'DELETED';
   if (!dead && shipment.items.some((i) => !i.po && !toSplit.has(i.product))) events.push({ type: 'needs_link', shipment: shipment.id });
 
-  return { shipment, events, unmapped };
+  return { shipment, events, unmapped, learned };
 }
 
 /* ---------------------------- cards ---------------------------- */
