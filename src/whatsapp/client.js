@@ -2,7 +2,7 @@ import pkg from 'whatsapp-web.js';
 import qrcode from 'qrcode-terminal';
 import { config } from '../config.js';
 import { log } from '../logger.js';
-import { clearStaleChromeLocks, clearWebAppCache } from './session.js';
+import { clearStaleChromeLocks, clearAppCacheIfRequested } from './session.js';
 import { messageKey, widString } from './ids.js';
 
 const { Client, LocalAuth } = pkg;
@@ -19,7 +19,8 @@ export function createWhatsAppClient() {
 
   if (config.waWebVersion) {
     // Otherwise the copy WhatsApp Web downloaded of its newest build overrides the pin.
-    const cleared = clearWebAppCache(config.sessionPath);
+    // Only when a stuck start found WhatsApp Web had updated itself past the pin (see session.js).
+    const cleared = clearAppCacheIfRequested(config.sessionPath);
     log.info(`WhatsApp Web pinned to ${config.waWebVersion}${cleared.length ? ` (cleared its cached app: ${cleared.join(', ')})` : ''}`);
   }
   const client = new Client({

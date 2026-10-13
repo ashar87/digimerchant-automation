@@ -65,3 +65,19 @@ export function clearWebAppCache(sessionPath) {
   }
   return cleared;
 }
+
+/**
+ * Clearing the cached app on every start made WhatsApp Web reinstall it and
+ * reload mid-start, after which "synced" had already happened and the library
+ * never became ready. So it's now cleared only when asked: a stuck start that
+ * found WhatsApp Web on another build than the pinned one leaves this flag.
+ */
+const FLAG = '.clear-app-cache';
+export const requestAppCacheClear = (sessionPath) => fs.writeFileSync(path.join(sessionPath, FLAG), new Date().toISOString());
+export function clearAppCacheIfRequested(sessionPath) {
+  const flag = path.join(sessionPath, FLAG);
+  if (!fs.existsSync(flag)) return [];
+  const cleared = clearWebAppCache(sessionPath);
+  fs.rmSync(flag, { force: true });
+  return cleared;
+}

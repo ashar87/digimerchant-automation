@@ -9,6 +9,7 @@ import { extractTasks } from './extract/classifier.js';
 import { toBufferMessage } from './media/ingest.js';
 import { transcribe } from './media/transcribe.js';
 import { recoverMissed } from './whatsapp/recover.js';
+import { requestAppCacheClear } from './whatsapp/session.js';
 import { getProvider } from './providers/index.js';
 import * as store from './store/db.js';
 
@@ -154,6 +155,24 @@ async function reportGap(chatLabel, { missed, author }) {
  * manager restart us. Dying loudly beats idling silently.
  */
 let isReady = false;
+// Which parts of whatsapp-web.js's start-up ran, so a stuck start says where it stopped.
+const startupSteps = [];
+const step = (name) => startupSteps.push(`${name}@${Math.round(process.uptime())}s`);
+client.on('authenticated', () => step('authenticated'));
+client.on('change_state', (s) => step(`state:${s}`));
+{
+  const original = client.attachEventListeners?.bind(client);
+  if (original) {
+    client.attachEventListeners = async (...args) => {
+      step('attachEventListeners');
+      const out = await original(...args);
+      step('attachEventListeners:done');
+      return out;
+    };
+  }
+  let info;
+  Object.defineProperty(client, 'info', { configurable: true, get: () => info, set: (v) => { info = v; step('info'); } });
+}
 const readyTimer = setTimeout(async () => {
   if (isReady) return;
   log.error(`WhatsApp did not become ready within ${config.readyTimeoutSeconds}s — exiting so the service restarts`);
@@ -169,8 +188,13 @@ const readyTimer = setTimeout(async () => {
       })),
       new Promise((r) => setTimeout(() => r('page did not answer within 10s'), 10_000)),
     ]);
-    log.error('stuck page:', JSON.stringify(page));
-    if (page && typeof page === 'object') noteHealth({ stuck: { at: new Date().toISOString(), version: page.version, store: page.store } });
+    log.error('stuck page:', JSON.stringify({ ...(typeof page === 'object' ? page : { page }), steps: startupSteps }));
+    if (page && typeof page === 'object') noteHealth({ stuck: { at: new Date().toISOString(), version: page.version, store: page.store, steps: startupSteps } });
+    // WhatsApp Web updated itself past the pin: clear its cached app before the next start.
+    if (config.waWebVersion && page?.version && !config.waWebVersion.startsWith(page.version)) {
+      requestAppCacheClear(config.sessionPath);
+      log.warn(`WhatsApp Web was on ${page.version}, not the pinned ${config.waWebVersion}: its cached app will be cleared before the next start`);
+    }
   } catch (err) {
     log.error('stuck page could not be read:', err.message);
   }
