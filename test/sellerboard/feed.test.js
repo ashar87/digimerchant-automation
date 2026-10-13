@@ -71,8 +71,7 @@ test('held back, with a reason: typed in by hand, unchecked imports, no SKU', ()
 test('CSV quotes separators and defuses spreadsheet formulas', () => {
   const csv = toCsv([{ sku: '=HYPERLINK("x")', asin: 'a,b', marketplace: 'Amazon.co.uk', date: '2026-01-01', quantity: '5', cost: '-1.0000', currency: 'GBP', shipment: 'F', status: 'final' }]);
   const line = csv.split('\r\n')[1];
-  assert.ok(line.startsWith(`"'=HYPERLINK(""x"")",` ));
-  assert.ok(line.includes('"a,b"'));
+  assert.ok(line.startsWith(`"a,b","'=HYPERLINK(""x"")",` ));
   assert.ok(line.includes(',-1.0000,'));
 });
 
@@ -96,7 +95,7 @@ test('the Sheets writer logs in with a signed service-account token, clears the 
   assert.match(calls[1].url, /SHEET1\/values\/'COGS':clear$/);
   assert.match(calls[2].url, /values\/'COGS'!A1\?valueInputOption=RAW$/);
   assert.equal(calls[2].init.headers.Authorization, 'Bearer g-tok');
-  assert.equal(JSON.parse(calls[2].init.body).values[0][0], 'SKU');
+  assert.equal(JSON.parse(calls[2].init.body).values[0][0], 'ASIN'); // Sellerboard's own column order
 });
 
 test('backups decrypt only with the right passphrase', () => {

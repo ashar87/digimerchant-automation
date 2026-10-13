@@ -60,7 +60,9 @@ test('the Sellerboard page lists the rows, offers the CSV, and writes the sheet'
   assert.match(html, /1 row for Sellerboard/);
   const csv = await fetch(`${base}/sellerboard.csv`, { headers: { Cookie: 'actor=Ashar' } });
   assert.match(csv.headers.get('content-disposition'), /attachment/);
-  assert.match(await csv.text(), /SKU-A,,Amazon\.co\.uk,2026-01-12,100,1\.2000,GBP,FBANEW1,final/);
+  const text = await csv.text();
+  assert.match(text, /^ASIN,SKU,CostPeriodStartDate,Cost,Marketplace,BatchQuantity\r\n/);
+  assert.match(text, /,SKU-A,12\/01\/2026,1\.2000,Amazon\.co\.uk,100\r\n/);
   const r = await post('/sellerboard/publish', {});
   assert.equal(r.status, 303);
   assert.equal(written.at(-1).length, 2);
@@ -75,8 +77,8 @@ test('ticking “typed into Sellerboard by hand” takes a shipment out of the f
 test('the test download can include batches typed in by hand, and narrow to one shipment', async () => {
   const csv = async (q) => (await fetch(`${base}/sellerboard.csv${q}`, { headers: { Cookie: 'actor=Ashar' } })).text();
   assert.doesNotMatch(await csv(''), /FBANEW1/); // typed by hand: left out of the normal file
-  assert.match(await csv('?all=1'), /SKU-A,,Amazon\.co\.uk,2026-01-12,100,1\.2000,GBP,FBANEW1/);
-  assert.match(await csv('?all=1&shipment=FBANEW1'), /FBANEW1/);
+  assert.match(await csv('?all=1'), /,SKU-A,12\/01\/2026,1\.2000,Amazon\.co\.uk,100/);
+  assert.match(await csv('?all=1&shipment=FBANEW1'), /SKU-A/);
   assert.equal((await csv('?all=1&shipment=FBANOPE')).trim().split('\n').length, 1); // just the header
   assert.match(await page('/sellerboard'), /Testing the import, or comparing/);
 });

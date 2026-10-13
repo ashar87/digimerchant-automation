@@ -7,22 +7,24 @@
  * A batch only goes in once Amazon starts receiving it, dated that day: that's
  * when the stock becomes sellable and the inventory level starts to rise.
  *
- * Column headers must match Sellerboard's COGS template. They're defined once
- * here: if Sellerboard's template names them differently, change COLUMNS.
+ * Columns, names and order as in Sellerboard's own product export (Products →
+ * Export, checked 13 Oct 2026), with dates day/month/year as it writes them, so
+ * the file imports without remapping. The dashboard page shows a few more
+ * (currency, shipment, status) that stay out of the file.
  */
 import { fmt4 } from '../landing/money.js';
 
 export const COLUMNS = [
-  { key: 'sku', header: 'SKU' },
   { key: 'asin', header: 'ASIN' },
+  { key: 'sku', header: 'SKU' },
+  { key: 'startDate', header: 'CostPeriodStartDate' },
+  { key: 'cost', header: 'Cost' },
   { key: 'marketplace', header: 'Marketplace' },
-  { key: 'date', header: 'Date' },
-  { key: 'quantity', header: 'Batch quantity' },
-  { key: 'cost', header: 'Cost per unit' },
-  { key: 'currency', header: 'Currency' },
-  { key: 'shipment', header: 'Batch' },
-  { key: 'status', header: 'Status' },
+  { key: 'quantity', header: 'BatchQuantity' },
 ];
+export const PAGE_COLUMNS = [...COLUMNS, { key: 'currency', header: 'Currency' }, { key: 'shipment', header: 'Shipment' }, { key: 'status', header: 'Status' }];
+
+const dayMonthYear = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 
 const MARKETPLACE_NAMES = { UK: 'Amazon.co.uk', DE: 'Amazon.de', US: 'Amazon.com' };
 const STATUS_WORDS = { final: 'final', count_pending: 'awaiting Amazon count', estimated: 'delivery estimated' };
@@ -75,6 +77,7 @@ export function buildFeed(ledger, result, { includeManual = false, shipment = nu
       asin: p.asin || '',
       marketplace: MARKETPLACE_NAMES[b.marketplace],
       date: s.firstReceivedAt,
+      startDate: dayMonthYear(s.firstReceivedAt),
       quantity: b.units.toString(),
       cost: fmt4(b.landingCost),
       currency: b.currency,

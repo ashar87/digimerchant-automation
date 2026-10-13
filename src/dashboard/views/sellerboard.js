@@ -1,5 +1,5 @@
 import { html } from '../html.js';
-import { buildFeed, toCsv, COLUMNS } from '../../sellerboard/feed.js';
+import { buildFeed, toCsv, PAGE_COLUMNS } from '../../sellerboard/feed.js';
 import { publishFeed } from '../../sellerboard/publish.js';
 import { HttpError } from '../errors.js';
 import { enc } from './common.js';
@@ -28,8 +28,8 @@ ${(() => {
 
 <h2>${feed.rows.length} row${feed.rows.length === 1 ? '' : 's'} for Sellerboard</h2>
 ${feed.rows.length
-  ? html`<div class="card scroll"><table><thead><tr>${COLUMNS.map((c) => html`<th>${c.header}</th>`)}</tr></thead><tbody>
-${feed.rows.map((r) => html`<tr>${COLUMNS.map((c) => html`<td class="${['quantity', 'cost'].includes(c.key) ? 'n' : ''}">${r[c.key]}</td>`)}</tr>`)}
+  ? html`<div class="card scroll"><table><thead><tr>${PAGE_COLUMNS.map((c) => html`<th>${c.header}</th>`)}</tr></thead><tbody>
+${feed.rows.map((r) => html`<tr>${PAGE_COLUMNS.map((c) => html`<td class="${['quantity', 'cost'].includes(c.key) ? 'n' : ''}">${r[c.key]}</td>`)}</tr>`)}
 </tbody></table></div>`
   : html`<p class="muted">Nothing yet.</p>`}
 
