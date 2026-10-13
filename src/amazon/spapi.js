@@ -6,6 +6,7 @@
  * 2023): a refresh token per region is exchanged for a one-hour access token,
  * sent as x-amz-access-token. Nothing here runs unless credentials are set.
  */
+import zlib from 'node:zlib';
 
 export const MARKETPLACES = {
   UK: { id: 'A1F83G8C2ARO7P', region: 'EU' },
@@ -145,7 +146,35 @@ export function createSpApi({ clientId, clientSecret, refreshTokens = {}, fetch 
     await request(region, 'PUT', `${V2024}/inboundPlans/${encodeURIComponent(inboundPlanId)}/shipments/${encodeURIComponent(shipmentId)}/name`, { body: { name } });
   }
 
-  return { regions, marketplaces, getShipments, getShipmentItems, findInboundShipment, updateShipmentName };
+  /* ---------- Reports 2021-06-30: e.g. the inventory ledger ---------- */
+
+  /**
+   * Asks Amazon for a report, waits until it's ready (Amazon builds them in the
+   * background, usually within a few minutes) and returns its text.
+   */
+  async function report(marketplace, reportType, { start, end, pollMs = 15_000, maxWaitMs = 15 * 60_000 } = {}) {
+    const { id: marketplaceId, region } = MARKETPLACES[marketplace];
+    const created = await request(region, 'POST', '/reports/2021-06-30/reports', {
+      body: { reportType, marketplaceIds: [marketplaceId], ...(start ? { dataStartTime: start } : {}), ...(end ? { dataEndTime: end } : {}) },
+    });
+    const started = now();
+    for (;;) {
+      const r = await request(region, 'GET', `/reports/2021-06-30/reports/${encodeURIComponent(created.reportId)}`);
+      if (r.processingStatus === 'DONE') {
+        const doc = await request(region, 'GET', `/reports/2021-06-30/documents/${encodeURIComponent(r.reportDocumentId)}`);
+        const res = await fetch(doc.url);
+        if (!res.ok) throw new SpApiError(res.status, `Amazon report download failed (${res.status})`);
+        let bytes = Buffer.from(await res.arrayBuffer());
+        if (doc.compressionAlgorithm === 'GZIP') bytes = zlib.gunzipSync(bytes);
+        return bytes.toString('utf8');
+      }
+      if (['CANCELLED', 'FATAL'].includes(r.processingStatus)) throw new SpApiError(0, `Amazon couldn't produce the ${reportType} report (${r.processingStatus})`);
+      if (now() - started > maxWaitMs) throw new SpApiError(0, `Amazon's ${reportType} report wasn't ready after ${Math.round(maxWaitMs / 60_000)} minutes`);
+      await sleep(pollMs);
+    }
+  }
+
+  return { regions, marketplaces, getShipments, getShipmentItems, findInboundShipment, updateShipmentName, report };
 }
 
 function chunk(list, n) {
