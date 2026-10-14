@@ -4,6 +4,7 @@ import { date, list } from '../forms.js';
 import { readHealth } from '../../health.js';
 import { lastBackup } from '../../backup/run.js';
 import { config } from '../../config.js';
+import { supplierList } from './common.js';
 
 export function settingsPage(ctx) {
   const cutover = getSetting(ctx.db, 'cutover_date');
@@ -19,6 +20,11 @@ export function settingsPage(ctx) {
 <label for="ignored">Amazon shipments to ignore (FBA IDs, comma-separated)</label><input id="ignored" name="amazon_ignored_shipments" value="${ignored || ''}" style="width:100%">
 <p class="muted small">Shipments of stock that isn't new, such as units Amazon returned to you that you sent back in. Their cost was counted when they first shipped, so the Amazon check skips these shipments.</p>
 <button>Save</button></form>
+<h2 id="suppliers">Suppliers</h2>
+<form class="card" method="post" action="/settings/suppliers">
+<label for="supplier-list">Supplier names, one per line</label><textarea id="supplier-list" name="suppliers" rows="${Math.max(4, supplierList(ctx).length + 1)}" style="width:100%">${supplierList(ctx).join('\n')}</textarea>
+<p class="muted small">The choices in the Supplier dropdowns on orders and invoices. Taking a name off the list doesn't change orders that already use it.</p>
+<button>Save suppliers</button></form>
 <h2>Backups</h2>
 ${(() => {
   const b = lastBackup(ctx.db);
@@ -47,4 +53,10 @@ export function saveSettings(ctx) {
   setSetting(ctx.db, 'cutover_date', date(ctx.form.get('cutover_date'), 'Cutover date') ?? '', { actor: ctx.actor });
   setSetting(ctx.db, 'amazon_ignored_shipments', list(ctx.form.get('amazon_ignored_shipments')).map((s) => s.toUpperCase()).join(', '), { actor: ctx.actor });
   return { redirect: '/settings?ok=Saved.' };
+}
+
+export function saveSuppliers(ctx) {
+  const names = [...new Set(String(ctx.form.get('suppliers') || '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean))];
+  setSetting(ctx.db, 'suppliers', names.join('\n'), { actor: ctx.actor });
+  return { redirect: `/settings?ok=${encodeURIComponent('Suppliers saved.')}#suppliers` };
 }

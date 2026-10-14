@@ -6,7 +6,7 @@ import { ROOT } from '../../config.js';
 import { intakeInvoice, getDraft, pendingDrafts, closeDraft, INVOICE_DIR } from '../../invoices/intake.js';
 import { text, required, compact } from '../forms.js';
 import { HttpError, notFound } from '../errors.js';
-import { MARKETPLACES, enc } from './common.js';
+import { MARKETPLACES, enc, supplierList, supplierOptions } from './common.js';
 import { invoiceForm, invoiceFromForm } from './orders.js';
 import { versionField, assertFresh } from '../versions.js';
 
@@ -64,9 +64,12 @@ export function draftPage(ctx) {
     statedTotalRmb: r.statedTotalRmb,
     lines: (r.lines || []).map((l) => ({ kind: l.kind, product: l.product, qty: l.qty, rmb: l.rmb, description: l.description })),
   };
+  // The name as read off the invoice, matched to the list where one fits ("NANJING YONGBO CO." → Nanjing Yongbo).
+  const read = (r.supplier || '').toLowerCase();
+  const supplier = existing?.supplier || (read && supplierList(ctx).find((n) => read.includes(n.toLowerCase()) || n.toLowerCase().includes(read))) || r.supplier || '';
   const head = html`<div class="grid">
   <div><label>PO number (required)</label><input name="po" value="${order.po}" list="pos" required pattern="PO-\\d+"></div>
-  <div><label>Supplier (for a new PO)</label><input name="supplier" value="${existing?.supplier || r.supplier || ''}"></div>
+  <div><label>Supplier (for a new PO)</label>${select('supplier', supplierOptions(ctx, supplier), supplier, { blank: true })}</div>
   <div><label>Marketplace (for a new PO)</label>${select('marketplace', MARKETPLACES, existing?.marketplace || r.marketplace || 'UK')}</div>
 </div>
 <datalist id="pos">${ledger.orders.map((o) => html`<option value="${o.po}">${o.supplier} · ${o.marketplace}</option>`)}</datalist>`;

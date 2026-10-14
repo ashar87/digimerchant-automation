@@ -1,4 +1,5 @@
 import { notFound } from '../errors.js';
+import { getSetting } from '../../landing/store.js';
 
 export const MARKETPLACES = ['UK', 'DE', 'US'];
 
@@ -20,6 +21,23 @@ export function productOptions(ledger, marketplace) {
 
 export function poOptions(ledger, marketplace) {
   return ledger.orders.filter((o) => !marketplace || o.marketplace === marketplace).map((o) => ({ value: o.po, label: `${o.po} · ${o.supplier}` }));
+}
+
+/**
+ * The supplier names offered on the order forms. Set in Settings (one per line);
+ * until then, the suppliers already on orders and invoices. `current` is always
+ * offered too, so editing an order never drops a name that's off the list.
+ */
+export function supplierList(ctx) {
+  const saved = getSetting(ctx.db, 'suppliers');
+  if (saved) return saved.split('\n').map((s) => s.trim()).filter(Boolean);
+  const names = ctx.data.ledger.orders.flatMap((o) => [o.supplier, ...(o.invoices || []).map((i) => i.supplier)]);
+  return [...new Set(names.map((n) => (n || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+}
+
+export function supplierOptions(ctx, current) {
+  const list = supplierList(ctx);
+  return current && !list.includes(current) ? [...list, current] : list;
 }
 
 export function findOrder(ctx, po) {

@@ -7,7 +7,7 @@ import { saveLedger, nextPo, auditTrail, deleteRecord } from '../../landing/stor
 import { currentInvoices } from '../../landing/engine.js';
 import { text, number, date, required, rows, compact, uniqueId } from '../forms.js';
 import { HttpError } from '../errors.js';
-import { MARKETPLACES, productOptions, findOrder, productName, enc } from './common.js';
+import { MARKETPLACES, productOptions, findOrder, productName, enc, supplierOptions } from './common.js';
 import { versionField, assertFresh } from '../versions.js';
 
 const LINE_KINDS = [
@@ -127,11 +127,11 @@ export function ordersPage(ctx) {
 <h2 style="margin-top:0">New order</h2>
 <div class="grid">
   <div><label>PO number (required)</label><input name="po" value="${nextPo(ctx.db)}" required pattern="PO-\\d+"></div>
-  <div><label>Supplier</label><input name="supplier" required></div>
+  <div><label for="n-supplier">Supplier (required)</label>${select('supplier', supplierOptions(ctx), '', { blank: true, attrs: 'id="n-supplier" required' })}</div>
   <div><label>Marketplace</label>${select('marketplace', MARKETPLACES, 'UK')}</div>
   <div><label>Notes</label><input name="notes"></div>
 </div>
-<button>Create order</button> <span class="muted small">Then add its proforma or invoice. Use the PO in the Wise reference (e.g. “${nextPo(ctx.db)} 30%”) and in the FBA shipment name.</span>
+<button>Create order</button> <span class="muted small">Supplier not listed? <a href="/settings#suppliers">Add it in Settings</a>. Then add its proforma or invoice. Use the PO in the Wise reference (e.g. “${nextPo(ctx.db)} 30%”) and in the FBA shipment name.</span>
 </form>
 
 <h2>Orders</h2>
@@ -340,7 +340,7 @@ ${!inv?.id && order.invoices?.length
   <div><label>Date (required)</label><input type="date" name="date" value="${inv?.date || ''}" required></div>
   <div><label>Supplier’s invoice no.</label><input name="supplierRef" value="${inv?.supplierRef || ''}"></div>
   <div><label>Total on the invoice, RMB (required)</label><input name="statedTotalRmb" inputmode="decimal" value="${inv?.statedTotalRmb || ''}" required></div>
-  <div><label>Supplier, if not ${order.supplier || 'the PO’s'}</label><input name="invoiceSupplier" value="${inv?.supplier || ''}"></div>
+  <div><label>Supplier, if not ${order.supplier || 'the PO’s'}</label>${select('invoiceSupplier', [{ value: '', label: `Same as the PO${order.supplier ? ` (${order.supplier})` : ''}` }, ...supplierOptions(ctx, inv?.supplier).filter((n) => n !== order.supplier)], inv?.supplier || '')}</div>
 </div>
 <div class="scroll"><table class="rows" data-need-first><thead><tr><th>Kind</th><th>Product</th><th>Qty</th><th>RMB</th><th>Description / category</th></tr></thead><tbody>
 ${lines.map((l) => html`<tr><td>${select('line_kind', LINE_KINDS, l.kind || 'goods')}</td><td>${select('line_product', products, l.product, { blank: true, attrs: 'data-need="goods"' })}</td>
@@ -439,7 +439,7 @@ function editOrderForm(ctx, order) {
   const locked = marketplaceLocked(ctx, order);
   return html`<form class="card" method="post" action="/orders/${enc(order.po)}/edit">${versionField(order)}<div class="grid">
 <div><label>PO number</label><input value="${order.po}" disabled></div>
-<div><label for="o-supplier">Supplier (required)</label><input id="o-supplier" name="supplier" value="${order.supplier || ''}" required></div>
+<div><label for="o-supplier">Supplier (required)</label>${select('supplier', supplierOptions(ctx, order.supplier), order.supplier, { blank: true, attrs: 'id="o-supplier" required' })}</div>
 <div><label for="o-market">Marketplace${locked ? ' (fixed: ' + locked + ')' : ''}</label>${select('marketplace', MARKETPLACES, order.marketplace, { attrs: locked ? 'id="o-market" disabled' : 'id="o-market"' })}</div>
 <div><label for="o-notes">Notes</label><input id="o-notes" name="notes" value="${order.notes || ''}"></div>
 </div><p class="muted small">The PO number can't change: it's in the Wise references and the shipment names in Seller Central. If it's wrong, delete this PO and create it again.</p>

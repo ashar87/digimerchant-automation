@@ -7,7 +7,7 @@ import { productsPage, productPage, saveProduct, deleteProduct } from './views/p
 import { billsPage, billPage, saveBill, deleteBill } from './views/bills.js';
 import { sellerboardPage, sellerboardCsv, publishSellerboard } from './views/sellerboard.js';
 import { anniePage } from './views/annie.js';
-import { settingsPage, saveSettings } from './views/settings.js';
+import { settingsPage, saveSettings, saveSuppliers } from './views/settings.js';
 import { runAmazonSync, replyToCard, messagesPage } from './views/amazon.js';
 import { wisePage, fetchWise, ignoreTransfer, lookupRate } from './views/wise.js';
 import { boardPage, newTaskPage, taskPage, saveTaskForm, moveTask, deleteTaskPage, deleteTaskForm } from './views/tasks.js';
@@ -104,4 +104,5 @@ export const routes = [
   r('GET', '/usage', usagePage),
   r('GET', '/settings', settingsPage),
   r('POST', '/settings', saveSettings),
+  r('POST', '/settings/suppliers', saveSuppliers),
 ];
