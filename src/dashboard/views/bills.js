@@ -35,7 +35,7 @@ export const ONWARD_STEPS = [
   ['Put the FBA ID on the held line', 'Open this courier bill, type the new FBA shipment ID on the held line (keep the kind) and save. Do the same for its domestic fee line. The cost then counts towards that shipment and the Inbox reminder clears.'],
   ['Sent in more than one shipment?', 'Split the held line into one line per FBA shipment, sharing the RMB by units. E.g. 600 RMB for 1,000 units sent as 400 + 600: lines of 240 RMB and 360 RMB. Keep the bill’s total the same.'],
   ['Until the line names it', 'If the FBA shipment is in the dashboard but the held line doesn’t name it yet, its delivery cost is estimated from the last shipment of the same product. Its landing cost and Sellerboard cost are only right once the line names it.'],
-  ['Not covered yet', 'The second leg, from the 3PL or your home to Amazon (UK courier, 3PL storage and handling), isn’t in landing cost yet. These are usually billed in GBP, not RMB. Keep those bills; how to add them is still to decide.'],
+  ['The second leg is an expense', 'Getting the goods from the 3PL or your home to Amazon (UK courier, 3PL storage and handling) is a one-off expense, not landing cost. Don’t add it here; book it in the accounts as an expense.'],
 ];
 
 const onwardGuide = (open = false) => html`<details class="card" id="no-fba-id"${open ? ' open' : ''}><summary><b>Goods sent to a 3PL or your own warehouse (no FBA ID yet)</b></summary>
