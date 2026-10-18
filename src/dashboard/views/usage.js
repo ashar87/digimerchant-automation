@@ -4,7 +4,7 @@ import { D } from '../../landing/money.js';
 import { usageRows, priceOn } from '../../ai/usage.js';
 import { config } from '../../config.js';
 
-const JOBS = { tasks: 'WhatsApp cycle', invoice: 'Invoice read', transcribe: 'Voice note', document: 'Document read' };
+const JOBS = { tasks: 'WhatsApp cycle', invoice: 'Invoice read', 'courier bill': 'Courier bill read', transcribe: 'Voice note', document: 'Document read' };
 const n = (v) => Number(v || 0).toLocaleString('en-GB');
 const usd = (v) => {
   if (v === null || v === undefined) return '—';

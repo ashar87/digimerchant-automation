@@ -26,7 +26,9 @@
  * expense (packing bags, samples, R&D: never in landing cost).
  *
  * Courier bill line kinds: shipping, domestic (with a shipment: that
- * shipment's own cost; without: shared) · fee, adjustment (shared) · expense.
+ * shipment's own cost; without: shared) · fee, adjustment (shared) · expense ·
+ * onward (goods sent to a 3PL or home: held out of landing cost until the line
+ * names the FBA shipment they later went to Amazon in, then that shipment's own).
  *
  * Shared amounts are spread by RMB share: across goods lines on an invoice,
  * across shipments on a courier bill.
@@ -466,8 +468,12 @@ function allocateBill(bill, allocations, shipmentsById, issue) {
     if (!l.shipment || l.kind === 'expense') continue;
     own.set(l.shipment, (own.get(l.shipment) || ZERO).plus(D(l.rmb)));
   }
-  const shared = sum(lines.filter((l) => !l.shipment && l.kind !== 'expense').map((l) => D(l.rmb)));
+  const shared = sum(lines.filter((l) => !l.shipment && l.kind !== 'expense' && l.kind !== 'onward').map((l) => D(l.rmb)));
   const allocated = spread(own, own, shared);
+  const held = lines.filter((l) => l.kind === 'onward' && !l.shipment);
+  if (held.length) {
+    issue('warning', 'bill_awaiting_shipment', bill.id, `Courier bill ${bill.id} has ${fmtRmb(sum(held.map((l) => D(l.rmb))))} RMB of shipping to ${held.map((l) => l.description || 'a 3PL or home').join(', ')}. Add the FBA shipment to that line once the goods go to Amazon; until then it isn't in any landing cost.`);
+  }
 
   if (!allocations.length) {
     issue('info', 'bill_unpaid', bill.id, `Courier bill ${bill.id} has no payment linked yet.`);

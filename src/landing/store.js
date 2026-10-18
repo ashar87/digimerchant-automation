@@ -98,7 +98,7 @@ CREATE TABLE IF NOT EXISTS courier_bill_lines (
   id          INTEGER PRIMARY KEY,
   bill_id     TEXT NOT NULL REFERENCES courier_bills(id) ON DELETE CASCADE,
   seq         INTEGER NOT NULL,
-  kind        TEXT NOT NULL CHECK (kind IN ('shipping','domestic','fee','adjustment','expense')),
+  kind        TEXT NOT NULL CHECK (kind IN ('shipping','domestic','fee','adjustment','expense','onward')),
   shipment    TEXT,                       -- FBA ID as printed on the bill
   rmb         TEXT,                       -- may be blank only on a one-line bill that states USD alone
   description TEXT,
@@ -172,6 +172,20 @@ CREATE TABLE IF NOT EXISTS sync_runs (
 );
 
 -- Invoices uploaded or forwarded, read but not yet checked by a person.
+-- Courier bills uploaded and read, waiting to be checked: like invoice_drafts.
+CREATE TABLE IF NOT EXISTS bill_drafts (
+  id         INTEGER PRIMARY KEY,
+  created_at TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  source     TEXT NOT NULL,             -- upload
+  file_path  TEXT NOT NULL,             -- under data/invoices
+  filename   TEXT,
+  mime       TEXT,
+  reading    TEXT,                      -- JSON: what was read, how, and the checks
+  status     TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','saved','discarded')),
+  saved_as   TEXT                       -- courier bill id once saved
+);
+
 CREATE TABLE IF NOT EXISTS invoice_drafts (
   id         INTEGER PRIMARY KEY,
   created_at TEXT NOT NULL,
@@ -301,6 +315,27 @@ function migrate(db) {
   add('shipments', 'sellerboard_manual', 'INTEGER');
   add('invoices', 'series', 'TEXT'); // versions of one supplier invoice share a series; a PO can hold several
   add('invoices', 'supplier', 'TEXT'); // when an invoice on the PO is from a different supplier // 1 = costs typed into Sellerboard by hand; the feed leaves it alone
+
+  // Courier bill lines gained the 'onward' kind (goods sent to a 3PL or home, FBA
+  // shipment later). SQLite can't alter a CHECK, so the table is rebuilt once.
+  const lines = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'courier_bill_lines'").get()?.sql || '';
+  if (!lines.includes("'onward'")) {
+    db.transaction(() => {
+      db.exec(`CREATE TABLE courier_bill_lines_new (
+  id          INTEGER PRIMARY KEY,
+  bill_id     TEXT NOT NULL REFERENCES courier_bills(id) ON DELETE CASCADE,
+  seq         INTEGER NOT NULL,
+  kind        TEXT NOT NULL CHECK (kind IN ('shipping','domestic','fee','adjustment','expense','onward')),
+  shipment    TEXT,
+  rmb         TEXT,
+  description TEXT,
+  category    TEXT
+);
+INSERT INTO courier_bill_lines_new SELECT id, bill_id, seq, kind, shipment, rmb, description, category FROM courier_bill_lines;
+DROP TABLE courier_bill_lines;
+ALTER TABLE courier_bill_lines_new RENAME TO courier_bill_lines;`);
+    })();
+  }
 }
 
 const json = (v) => (v === undefined || v === null ? null : JSON.stringify(v));

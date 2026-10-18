@@ -4,7 +4,7 @@ import { paymentsPage, paymentForm, savePayment, deletePayment } from './views/p
 import { shipmentsPage, shipmentForm, saveShipment, deleteShipment, ignoreShipmentForm } from './views/shipments.js';
 import { costsPage, batchPage } from './views/costs.js';
 import { productsPage, productPage, saveProduct, deleteProduct } from './views/products.js';
-import { billsPage, billPage, saveBill, deleteBill } from './views/bills.js';
+import { billsPage, billPage, saveBill, deleteBill, uploadBill, billDraftPage, billDraftFile, saveBillDraft, discardBillDraft } from './views/bills.js';
 import { sellerboardPage, sellerboardCsv, publishSellerboard } from './views/sellerboard.js';
 import { anniePage } from './views/annie.js';
 import { settingsPage, saveSettings, saveSuppliers } from './views/settings.js';
@@ -78,6 +78,11 @@ export const routes = [
 
   r('GET', '/bills', billsPage),
   r('GET', '/bills/new', billPage),
+  r('POST', '/bills/upload', uploadBill),
+  r('GET', '/bills/drafts/:seg', billDraftPage),
+  r('GET', '/bills/drafts/:seg/file', billDraftFile),
+  r('POST', '/bills/drafts/:seg/save', saveBillDraft),
+  r('POST', '/bills/drafts/:seg/discard', discardBillDraft),
   r('POST', '/bills', saveBill),
   r('POST', '/bills/:seg/delete', deleteBill),
   r('GET', '/bills/:seg', billPage),

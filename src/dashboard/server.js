@@ -17,6 +17,7 @@ import { seedTaskRefs, whatsappRefCounter } from '../tasks/board.js';
 import { createSpApi, spApiConfigured } from '../amazon/spapi.js';
 import { createSheetsWriter, sheetsConfigured } from '../google/sheets.js';
 import { geminiInvoiceReader } from '../invoices/model.js';
+import { geminiBillReader } from '../bills/read.js';
 import { createWise, wiseConfigured } from '../wise/client.js';
 import { qboConfigured, qboFromConfig } from '../quickbooks/client.js';
 import { computeLandingCosts } from '../landing/engine.js';
@@ -37,10 +38,10 @@ export { HttpError } from './errors.js';
  * there's no name to pick. Without it (local development) the name is picked
  * once and kept in a cookie.
  */
-export function createDashboard({ db, spapi = null, sheets = null, invoiceReader = null, wise = null, qbo = null, people = null }) {
+export function createDashboard({ db, spapi = null, sheets = null, invoiceReader = null, billReader = null, wise = null, qbo = null, people = null }) {
   return http.createServer(async (req, res) => {
     try {
-      await handle({ db, spapi, sheets, invoiceReader, wise, qbo, people }, req, res);
+      await handle({ db, spapi, sheets, invoiceReader, billReader, wise, qbo, people }, req, res);
     } catch (err) {
       const status = err.status || 500;
       if (status === 500) console.error('[dashboard]', err);
@@ -68,7 +69,7 @@ function identify(req, people) {
   return name;
 }
 
-async function handle({ db, spapi, sheets, invoiceReader, wise, qbo, people }, req, res) {
+async function handle({ db, spapi, sheets, invoiceReader, billReader, wise, qbo, people }, req, res) {
   const url = new URL(req.url, 'http://localhost');
   const actor = identify(req, people);
 
@@ -99,6 +100,7 @@ async function handle({ db, spapi, sheets, invoiceReader, wise, qbo, people }, r
     spapi,
     sheets,
     invoiceReader,
+    billReader,
     wise,
     qbo,
     actor,
@@ -223,13 +225,15 @@ if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   const spapi = spApiConfigured(config.spapi) ? createSpApi(config.spapi) : null;
   const sheets = sheetsConfigured(config.sellerboard) ? createSheetsWriter(config.sellerboard) : null;
   // PDFs and photos are read by Gemini only when a key is set; Excel never needs it.
-  const invoiceReader = config.geminiApiKey ? geminiInvoiceReader(await import('../providers/gemini.js')) : null;
+  const gemini = config.geminiApiKey ? await import('../providers/gemini.js') : null;
+  const invoiceReader = gemini ? geminiInvoiceReader(gemini) : null;
+  const billReader = gemini ? geminiBillReader(gemini) : null;
   const wise = wiseConfigured(config.wise) ? createWise(config.wise) : null;
   const qbo = qboConfigured(config.qbo) ? qboFromConfig(db, config.qbo) : null;
   // Board refs carry on from the WhatsApp listener's, so A-numbers never repeat.
   seedTaskRefs(db, whatsappRefCounter(config.dbPath));
   const people = process.env.DASHBOARD_TAILSCALE === '1' ? loadPeople(path.join(ROOT, 'config', 'people.json')) : null;
-  createDashboard({ db, spapi, sheets, invoiceReader, wise, qbo, people }).listen(port, '127.0.0.1', () => {
+  createDashboard({ db, spapi, sheets, invoiceReader, billReader, wise, qbo, people }).listen(port, '127.0.0.1', () => {
     console.log(`Landing-cost dashboard: http://127.0.0.1:${port}  (database ${config.landingDbPath}${people ? `; Tailscale sign-in for ${Object.values(people).join(', ')}` : ''})`);
   });
 }
