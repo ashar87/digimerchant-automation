@@ -24,6 +24,23 @@ const KINDS = [
   { value: 'expense', label: 'Expense (not landing cost)' },
   { value: 'onward', label: 'To a 3PL / home (FBA shipment later)' },
 ];
+/** Goods that go to a 3PL or your own warehouse before Amazon, shown on the Courier bills page. Each step is what the system does or needs. */
+export const ONWARD_STEPS = [
+  ['How to spot it', 'A row on Annie’s bill with shipping charged but no FBA ID: the goods are going to a 3PL or your home, and reach Amazon later in a shipment you create then. Its domestic shipping fee row has no FBA ID either.'],
+  ['Read the bill as usual', 'Upload it here. Those rows come in as “To a 3PL / home (FBA shipment later)” lines, flagged on the check page. If a row does have an FBA ID that just couldn’t be read, type the ID in and change the kind to Shipping instead.'],
+  ['Say where the goods went', 'Put the place in the line’s description, e.g. “UK 3PL” or “Home, Leeds”, so you can find it later. Typing a bill in by hand: choose the same kind, leave FBA shipment blank, and fill in the description.'],
+  ['Save it and pay it as normal', 'Record the payment against the whole bill, as for any courier bill. The held line’s share of the payment waits on the bill; it isn’t lost and isn’t added to the other shipments.'],
+  ['Until then it’s held', 'The held amount isn’t in any landing cost yet, and the Inbox keeps a reminder for each bill that has one. The goods are still part of their PO, so the PO’s goods cost is unchanged.'],
+  ['When the goods go to Amazon', 'Create the shipment in Send to Amazon from the 3PL or your address, with the PO in its name as usual (“PO-041 UK”). The next morning’s Amazon sync brings it in and links it to the PO.'],
+  ['Put the FBA ID on the held line', 'Open this courier bill, type the new FBA shipment ID on the held line (keep the kind) and save. Do the same for its domestic fee line. The cost then counts towards that shipment and the Inbox reminder clears.'],
+  ['Sent in more than one shipment?', 'Split the held line into one line per FBA shipment, sharing the RMB by units. E.g. 600 RMB for 1,000 units sent as 400 + 600: lines of 240 RMB and 360 RMB. Keep the bill’s total the same.'],
+  ['Until the line names it', 'If the FBA shipment is in the dashboard but the held line doesn’t name it yet, its delivery cost is estimated from the last shipment of the same product. Its landing cost and Sellerboard cost are only right once the line names it.'],
+  ['Not covered yet', 'The second leg, from the 3PL or your home to Amazon (UK courier, 3PL storage and handling), isn’t in landing cost yet. These are usually billed in GBP, not RMB. Keep those bills; how to add them is still to decide.'],
+];
+
+const onwardGuide = (open = false) => html`<details class="card" id="no-fba-id"${open ? ' open' : ''}><summary><b>Goods sent to a 3PL or your own warehouse (no FBA ID yet)</b></summary>
+<ol class="rules">${ONWARD_STEPS.map(([title, text]) => html`<li><b>${title}.</b> ${text}</li>`)}</ol></details>`;
+
 const METHOD = { excel: 'Read exactly from the Excel file.', model: 'Read by Gemini. Anything it couldn’t read is left blank, never guessed.', none: 'Not read automatically.', failed: 'Reading failed.' };
 const BLANK_LINES = 6;
 
@@ -32,6 +49,7 @@ export function billsPage(ctx) {
   const body = html`
 <h1>Courier bills</h1>
 <p class="sub">Each line names its FBA shipment, so a bill covering many orders attaches line by line.</p>
+${onwardGuide()}
 <form class="card" method="post" action="/bills/upload" enctype="multipart/form-data">
 <div class="grid"><div><label for="bill-file">Courier bill (photo, PDF or Excel)</label><input id="bill-file" type="file" name="file" required accept=".xlsx,.pdf,.jpg,.jpeg,.png,.webp,.heic"></div></div>
 <button>Read bill</button> <span class="muted small">You check it before it’s saved.${ctx.billReader ? '' : ' Gemini reading isn’t set up here, so photos and PDFs will need their lines typed in.'} Or <a href="/bills/new">type one in</a>.</span>
@@ -66,6 +84,7 @@ export function billPage(ctx) {
 ${bill
   ? html`<p>${bill.agent || ''} ${bill.date || ''} · paid by ${paidBy.length ? paidBy.map((p, i) => html`${i ? ', ' : ''}<a href="/payments/${enc(p.id)}">${p.id}</a>`) : html`no payment yet — <a href="/payments/new">record it</a> with a “Courier bill” row for ${bill.id}`}</p>
 ${issues.map((i) => html`<p class="notice">${i.message}</p>`)}
+${bill.lines.some((l) => l.kind === 'onward' && !l.shipment) ? html`<p class="small">Goods on this bill went to a 3PL or your home. <a href="/bills#no-fba-id">How to finish the held line</a> once they go to Amazon.</p>` : ''}
 ${allocations.length
   ? html`<h2>Allocated to shipments</h2><div class="card scroll"><table><thead><tr><th>Shipment</th><th class="n">Share</th><th class="n">Delivery cost</th><th class="n">Per unit</th></tr></thead><tbody>
 ${allocations.map((a) => html`<tr><td><a href="/shipments/${enc(a.shipment.id)}">${a.shipment.id}</a> ${a.shipment.marketplace}</td><td class="n">${a.share ? `${a.share.times(100).toFixed(2)}%` : '—'}</td><td class="n">${money(a.amount, a.shipment.currency)}</td><td class="n">${unitCost(a.shipment.delivery.perUnit, a.shipment.currency)}</td></tr>`)}
@@ -152,6 +171,7 @@ export function billDraftPage(ctx) {
 <p class="sub">${draft.filename || 'Courier bill'} · ${METHOD[r.method] || ''} <a href="/bills/drafts/${draft.id}/file" target="_blank">Open the original</a></p>
 ${draft.status !== 'pending' ? html`<p class="notice">This bill was already ${draft.status}${draft.saved_as ? html` as <a href="/bills/${enc(draft.saved_as)}">${draft.saved_as}</a>` : ''}.</p>` : ''}
 ${r.totalUsd ? html`<p class="small">The bill asks for <b>$${fmtMoney(r.totalUsd)}</b>${r.rmbPerUsd ? ` at ${r.rmbPerUsd} RMB per USD` : ''}. Record the payment against this bill once it’s saved.</p>` : ''}
+${(r.lines || []).some((l) => l.kind === 'onward') ? onwardGuide(true) : ''}
 ${(r.checks || []).length ? html`<div class="card"><ul class="items">${r.checks.map((c) => html`<li><span class="sev ${c.severity === 'ok' ? 'info' : 'warning'}">${c.severity === 'ok' ? '✓' : '!'}</span><div style="flex:1">${c.message}</div></li>`)}</ul></div>` : ''}
 ${billForm(ctx, bill, { action: `/bills/drafts/${draft.id}/save`, submit: 'Save courier bill' })}
 <p class="muted small">The date is the day the bill was sent (from the file name when it has one). The original is attached to the bill when you save.</p>
@@ -215,6 +235,6 @@ ${lines.map((l) => html`<tr><td>${select('line_kind', KINDS, l.kind || 'shipping
 <td><input name="line_rmb" inputmode="decimal" value="${l.rmb || ''}" data-need="any"></td><td><input name="line_description" value="${l.description || l.category || ''}" data-need="adjustment expense onward"></td></tr>`)}
 </tbody></table></div>
 <datalist id="shipments">${ledger.shipments.map((s) => html`<option value="${s.id}">`)}</datalist>
-<p class="muted small"><b>Required on each line you use:</b> the RMB; for shipping and domestic shipping, the FBA shipment; for an adjustment or expense, what it is; for goods going to a 3PL or home, where (add their FBA shipment here once they go to Amazon). Put domestic shipping on its own shipment’s line. Fees and adjustments with no shipment are shared by RMB share. The bill’s total and rate are checked against its lines.</p>
+<p class="muted small"><b>Required on each line you use:</b> the RMB; for shipping and domestic shipping, the FBA shipment; for an adjustment or expense, what it is; for goods going to a 3PL or home, where (add their FBA shipment here once they go to Amazon: <a href="/bills#no-fba-id">how it works</a>). Put domestic shipping on its own shipment’s line. Fees and adjustments with no shipment are shared by RMB share. The bill’s total and rate are checked against its lines.</p>
 <button>${submit}</button></form>`;
 }

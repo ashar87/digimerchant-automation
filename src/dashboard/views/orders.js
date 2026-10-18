@@ -75,7 +75,7 @@ export const PO_RULES = [
   ['When a PO is fully paid', 'When its payments add up to the RMB of all its current invoices, or a payment is marked balance or full. Until then the cost is projected from the deposit.'],
   ['Put the PO in the shipment name', '“PO-041 UK” in Send to Amazon links the shipment by itself. A shipment carrying two POs: “PO-041 PO-043 UK”. If the same product comes from both, split the units on the shipment’s page.'],
   ['Units a cost is divided by', 'Units ordered until every unit has shipped and every shipment has closed, then units Amazon received. Units that will never ship are written off on the order, and their cost moves to the units that arrived.'],
-  ['Courier bills attach by FBA ID, not PO', 'Each line of Annie’s bill names its shipment. Until the bill arrives, delivery is estimated from the last shipment of the same product.'],
+  ['Courier bills attach by FBA ID, not PO', 'Each line of Annie’s bill names its shipment. Until the bill arrives, delivery is estimated from the last shipment of the same product. Goods sent to a 3PL or your home first are held on the bill until they go to Amazon; the steps are on the Courier bills page.'],
   ['Sellerboard', 'A batch goes to Sellerboard the day Amazon starts receiving it, dated that day, once its PO has been checked.'],
 ];
 
