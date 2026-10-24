@@ -76,7 +76,13 @@ export function paymentForm(ctx) {
   if (fromWise) p = { ...fromWise, id: null };
   const quick = !p && preset ? presetFor(ctx.data.result, preset, ctx.url.searchParams.get('part')) : null;
   if (quick) p = { reference: quick.reference };
-  const allocations = [...(p?.allocations || (fromWise?.allocation ? [fromWise.allocation] : preset ? [{ type: 'order', target: preset, part: quick?.part, rmb: quick?.rmb }] : []))];
+  // "Pay bill" on a courier bill: the bill and its RMB filled in.
+  const billId = !p ? ctx.url.searchParams.get('bill') : null;
+  const bill = billId ? ledger.courierBills.find((b) => b.id === billId) : null;
+  if (billId && !bill) throw notFound(`Courier bill ${billId}`);
+  if (bill) p = { reference: `${bill.id} shipping` };
+  const billUsd = bill && bill.statedTotalRmb && Number(bill.rmbPerUsd) > 0 ? (Number(bill.statedTotalRmb) / Number(bill.rmbPerUsd)).toFixed(2) : null;
+  const allocations = [...(p?.allocations || (fromWise?.allocation ? [fromWise.allocation] : preset ? [{ type: 'order', target: preset, part: quick?.part, rmb: quick?.rmb }] : bill ? [{ type: 'bill', target: bill.id, rmb: bill.statedTotalRmb }] : []))];
   for (let i = 0; i < BLANK_ROWS; i++) allocations.push({});
   const targets = [
     ...ledger.orders.map((o) => o.po),
@@ -88,6 +94,7 @@ export function paymentForm(ctx) {
 <h1>${p?.id ? `Payment ${p.id}` : 'Record a payment'}</h1>
 ${fromWise ? html`<p class="notice">Filled in from the Wise transfer of ${fromWise.date}${fromWise.reference ? ` (“${fromWise.reference}”)` : ''}. Check the amounts against Wise and say what it paid for.</p>` : ''}
 ${p?.id ? rateStatus(ctx, p) : ''}
+${bill ? html`<p class="notice">Paying courier bill <a href="/bills/${enc(bill.id)}">${bill.id}</a>: ${Number(bill.statedTotalRmb || 0).toLocaleString('en-GB')} RMB${billUsd ? ` at ${bill.rmbPerUsd} = about $${billUsd}` : ''}. Add the date, the USD you sent and what it cost you (GBP, or EUR with the QB rate), then record it.${bill.lines.some((l) => l.shipment && ['UK', 'DE'].includes(ctx.data.ledger.shipments.find((s) => s.id === l.shipment)?.marketplace)) ? ' It covers UK or DE shipments, so they need the GBP (or the QB rate).' : ''}</p>` : ''}
 ${quick ? html`<p class="notice">${{ deposit: 'Deposit', balance: 'Balance', full: 'Full payment' }[quick.part]} for <a href="/orders/${enc(preset)}">${preset}</a>${quick.rmb ? html`: ${Number(quick.rmb).toLocaleString('en-GB')} RMB${quick.part === 'deposit' ? ' (30% of the invoice)' : quick.part === 'balance' ? ' (what’s still unpaid)' : ' (the whole invoice)'} is filled in. Change it if the supplier asked for a different amount, then add what you sent.` : html`. The invoice total isn’t known yet, so fill in the amount the supplier asked for.`}</p>` : ''}
 <form class="card" method="post" action="/payments${p?.id ? `/${enc(p.id)}` : ''}" data-payment data-gbp-pos="${ledger.orders.filter((o) => o.marketplace !== 'US').map((o) => o.po).join(' ')}">
 ${fromWise ? html`<input type="hidden" name="wise" value="${fromWise.wise}">` : ''}

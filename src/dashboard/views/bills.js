@@ -62,9 +62,10 @@ ${(() => {
     : '';
 })()}
 <h2>Bills</h2>
-<div class="card scroll"><table><thead><tr><th>Date</th><th>Bill</th><th>Agent</th><th>Shipments</th><th class="n">RMB</th></tr></thead><tbody>
+<div class="card scroll"><table><thead><tr><th>Date</th><th>Bill</th><th>Agent</th><th>Shipments</th><th class="n">RMB</th><th>Paid</th></tr></thead><tbody>
 ${[...ledger.courierBills].reverse().map((b) => html`<tr><td>${b.date || ''}</td><td><a href="/bills/${enc(b.id)}">${b.id}</a></td><td>${b.agent || ''}</td>
-<td class="small">${[...new Set(b.lines.map((l) => l.shipment).filter(Boolean))].join(', ')}</td><td class="n">${rmb(b.lines.reduce((a, l) => a + Number(l.rmb || 0), 0))}</td></tr>`)}
+<td class="small">${[...new Set(b.lines.map((l) => l.shipment).filter(Boolean))].join(', ')}</td><td class="n">${rmb(b.lines.reduce((a, l) => a + Number(l.rmb || 0), 0))}</td>
+<td>${ledger.payments.some((p) => p.allocations.some((a) => a.type === 'bill' && a.target === b.id)) ? '✓' : html`<a href="/payments/new?bill=${enc(b.id)}">Pay bill</a>`}</td></tr>`)}
 </tbody></table></div>`;
   return { title: 'Courier bills', body };
 }
@@ -82,7 +83,8 @@ export function billPage(ctx) {
 <p class="muted small"><a href="/bills">Courier bills</a></p>
 <h1>${bill ? bill.id : 'Add a courier bill'}</h1>
 ${bill
-  ? html`<p>${bill.agent || ''} ${bill.date || ''} · paid by ${paidBy.length ? paidBy.map((p, i) => html`${i ? ', ' : ''}<a href="/payments/${enc(p.id)}">${p.id}</a>`) : html`no payment yet — <a href="/payments/new">record it</a> with a “Courier bill” row for ${bill.id}`}</p>
+  ? html`<p>${bill.agent || ''} ${bill.date || ''} · ${paidBy.length ? html`paid by ${paidBy.map((p, i) => html`${i ? ', ' : ''}<a href="/payments/${enc(p.id)}">${p.id}</a>`)}` : 'not paid yet'}</p>
+${paidBy.length ? '' : html`<p><a class="button" href="/payments/new?bill=${enc(bill.id)}">Pay bill</a> <span class="muted small">Opens the payment with this bill filled in.</span></p>`}
 ${issues.map((i) => html`<p class="notice">${i.message}</p>`)}
 ${bill.lines.some((l) => l.kind === 'onward' && !l.shipment) ? html`<p class="small">Goods on this bill went to a 3PL or your home. <a href="/bills#no-fba-id">How to finish the held line</a> once they go to Amazon.</p>` : ''}
 ${allocations.length

@@ -81,8 +81,8 @@ const icon = (name) => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" f
 export const NAV = [
   { key: 'inbox', label: 'Inbox', href: '/', tabs: [['/', 'Inbox']] },
   { key: 'tasks', label: 'Tasks', href: '/tasks', tabs: [['/tasks', 'Tasks']] },
-  { key: 'purchasing', label: 'Purchasing', href: '/orders', tabs: [['/orders', 'Orders'], ['/invoices', 'Invoices'], ['/payments', 'Payments']], also: ['/wise', '/annie'] },
-  { key: 'shipping', label: 'Shipping', href: '/shipments', tabs: [['/shipments', 'Shipments'], ['/bills', 'Courier bills']] },
+  { key: 'purchasing', label: 'Purchasing', href: '/orders', tabs: [['/orders', 'Orders'], ['/invoices', 'Invoices'], ['/bills', 'Courier bills'], ['/payments', 'Payments']], also: ['/wise', '/annie'] },
+  { key: 'shipping', label: 'Shipping', href: '/shipments', tabs: [['/shipments', 'Shipments']] },
   { key: 'costs', label: 'Costs', href: '/costs', tabs: [['/costs', 'Landing costs'], ['/sellerboard', 'Sellerboard']] },
 ];
 const SETTINGS = { key: 'settings', label: 'Settings', href: '/settings', tabs: [['/products', 'Products'], ['/messages', 'Messages'], ['/usage', 'AI usage'], ['/settings', 'Settings']] };
