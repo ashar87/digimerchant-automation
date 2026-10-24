@@ -8,8 +8,9 @@
  * give the same draft. On Annie's bill a row with an FBA ID is that shipment's
  * shipping; the "domestic shipping fee" row under it has no ID and belongs to
  * it; rows for the service fee and rate difference stand alone. A shipping row
- * with no FBA ID is goods going to a 3PL or home, which reach Amazon later in a
- * different shipment: an 'onward' line, held until that shipment is known.
+ * with no FBA ID (Annie sometimes prints her own reference there instead) stays
+ * a shipping line with the shipment left for the checker to pick, with likely
+ * shipments suggested. Goods going to a 3PL or home are marked so by hand.
  */
 import ExcelJS from 'exceljs';
 import { D } from '../landing/money.js';
@@ -19,6 +20,7 @@ Copy exactly what is printed. Rules:
 - If a number or ID is unclear, smudged, cut off or not printed, return null for it. Never estimate, infer, round or calculate a value that is not printed.
 - One entry in "rows" per printed row that has an amount, in order, including domestic shipping fee rows, service fee rows and rate-difference rows. Leave the totals out of "rows".
 - "fbaId" is the FBA shipment ID printed on that row (it looks like FBA15ABC123X or FBA19ABC123X). Return null if that row has none; never copy one from another row.
+- If the FBA ID column holds something that isn't an FBA ID (such as a long number), put it in "otherId" and return null for "fbaId".
 - "description" is any other words on the row that say what the amount is for, e.g. "domestic shipping fee", "1% of Annie service fee", "Last time payment rate difference".
 - Amounts are RMB unless the bill says otherwise.`;
 
@@ -36,6 +38,7 @@ export const BILL_SCHEMA = {
         properties: {
           date: { ...str, description: 'As printed, converted to yyyy-mm-dd only if unambiguous' },
           fbaId: str,
+          otherId: { ...str, description: 'A number printed in the FBA ID column that is not an FBA ID (e.g. 2880566496), else null' },
           tracking: str,
           cartons: num,
           chargedWeight: num,
@@ -93,11 +96,40 @@ export function matchShipment(read, shipmentIds) {
   return { id, onFile: false };
 }
 
+const MARKET_IN = [
+  [/germany|deutschland|德国|\bDE\b/i, 'DE'],
+  [/\bUSA?\b|united states|america|美国/i, 'US'],
+  [/\bUK\b|united kingdom|britain|england|英国/i, 'UK'],
+];
+const DAY = 86400_000;
+
+/**
+ * Shipments a row with no FBA ID is likely to be: same marketplace, no courier
+ * bill yet, created up to three weeks before the row's date (or a few days
+ * after). Closest first. Only suggestions: the person checking picks.
+ */
+export function likelyShipments(row, shipments) {
+  const text = [row.country, row.service].filter(Boolean).join(' ');
+  const market = MARKET_IN.find(([re]) => re.test(text))?.[1];
+  if (!market) return { market: null, candidates: [] };
+  const at = Date.parse(row.date || '');
+  const candidates = shipments
+    .filter((s) => s.marketplace === market && !s.billed)
+    .filter((s) => !Number.isFinite(at) || !s.createdAt || (Date.parse(s.createdAt) >= at - 21 * DAY && Date.parse(s.createdAt) <= at + 7 * DAY))
+    .sort((a, b) => Math.abs(Date.parse(a.createdAt || 0) - at) - Math.abs(Date.parse(b.createdAt || 0) - at))
+    .slice(0, 3);
+  return { market, candidates };
+}
+
+const shortDate = (iso) => (iso ? new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }) : 'date unknown');
+
 /**
  * Raw rows (from either reader) → bill lines, with notes for the checks.
- * `shipmentIds` are the FBA shipments on file.
+ * `shipments` are those on file: IDs, or { id, marketplace, createdAt, billed }.
  */
-export function billFromRows(raw, shipmentIds = []) {
+export function billFromRows(raw, shipments = []) {
+  const onFile = shipments.map((x) => (typeof x === 'string' ? { id: x } : x));
+  const shipmentIds = onFile.map((x) => x.id);
   const v = (x) => (x === null || x === undefined || x === '' || Number.isNaN(Number(x)) ? null : D(x).toString());
   const notes = [];
   const lines = [];
@@ -107,27 +139,36 @@ export function billFromRows(raw, shipmentIds = []) {
     const rmb = v(r.amount);
     const match = matchShipment(r.fbaId, shipmentIds);
     if (match.readAs) notes.push({ severity: 'ok', message: `Line ${i + 1}: read as ${match.readAs}; taken as ${match.id}, the shipment on file it matches.` });
-    else if (match.id && !match.onFile) notes.push({ severity: 'warning', message: `Line ${i + 1}: ${match.id} isn't a shipment on file yet. Check the ID, and add the shipment on the Shipments page (the Amazon check fills in its details) so the bill's cost reaches it.` });
+    else if (match.id && !match.onFile) notes.push({ severity: 'warning', message: `Line ${i + 1}: ${match.id} isn't on the dashboard yet. The Amazon check adds new shipments each morning (or press “Check now” on Shipments); if it still doesn’t appear, check the ID.` });
 
     let line;
     if (DOMESTIC.test(text)) {
       const shipment = match.id || last?.shipment;
       line = { kind: last?.kind === 'onward' && !match.id ? 'onward' : 'domestic', shipment, rmb, description: 'Domestic shipping fee' };
-      if (!match.id && last) notes.push({ severity: 'ok', message: `Line ${i + 1}: domestic shipping fee, taken as ${last.shipment || 'the line above'}’s (no FBA ID on its row).` });
-      if (!match.id && !last) notes.push({ severity: 'warning', message: `Line ${i + 1}: domestic shipping fee with no FBA ID and no shipment above it. It's shared across the bill's shipments unless you name one.` });
+      if (!match.id && last?.shipment) notes.push({ severity: 'ok', message: `Line ${i + 1}: domestic shipping fee, taken as ${last.shipment}’s (no FBA ID on its row).` });
+      else if (!match.id && last) notes.push({ severity: 'warning', message: `Line ${i + 1}: domestic shipping fee for line ${last.at}: give it the same FBA shipment.` });
+      else if (!match.id) notes.push({ severity: 'warning', message: `Line ${i + 1}: domestic shipping fee with no FBA ID and no shipment above it. It's shared across the bill's shipments unless you name one.` });
     } else if (FEE.test(text)) line = { kind: 'fee', shipment: match.id || undefined, rmb, description: text };
     else if (RATE_DIFF.test(text)) line = { kind: 'adjustment', shipment: match.id || undefined, rmb, description: text };
     else if (EXPENSE.test(text)) line = { kind: 'expense', rmb, description: text };
     else if (match.id) line = { kind: 'shipping', shipment: match.id, rmb };
     else if (r.service || r.country || r.tracking || r.cartons) {
-      line = { kind: 'onward', rmb, description: [r.country, r.service].filter(Boolean).join(' · ') || 'a 3PL or home' };
-      notes.push({ severity: 'warning', message: `Line ${i + 1}: shipping with no FBA ID, so it's taken as goods going to a 3PL or home. It stays out of landing cost until you add the FBA shipment they go to Amazon in. If the ID is just hard to read, enter it.` });
+      // No FBA ID printed: still a shipment to Amazon, which the person checking picks.
+      line = { kind: 'shipping', rmb };
+      const { market, candidates } = likelyShipments(r, onFile);
+      const printed = r.otherId ? ` (${r.otherId} is printed where the FBA ID goes)` : '';
+      const hint = candidates.length
+        ? `Likely: ${candidates.map((c) => `${c.id} (${c.marketplace}, created ${shortDate(c.createdAt)})`).join(', ')}.`
+        : market
+          ? `No ${market} shipment without a bill, from around ${r.date ? shortDate(r.date) : 'then'}, is on the dashboard yet: it may come in with the next Amazon check.`
+          : '';
+      notes.push({ severity: 'warning', message: `Line ${i + 1}: no FBA ID on the bill${printed}. Enter its FBA shipment. ${hint} If the goods went to a 3PL or your home instead, choose “To a 3PL / home”.`.replace(/\s+/g, ' ').trim() });
     } else {
       line = { kind: 'adjustment', rmb, description: text || 'Unlabelled line' };
       notes.push({ severity: 'warning', message: `Line ${i + 1}: couldn't tell what this ${rmb ?? ''} RMB is for. Choose its kind and say what it is.` });
     }
     if (rmb === null) notes.push({ severity: 'warning', message: `Line ${i + 1}: the amount couldn’t be read. Enter it from the bill.` });
-    if (line.kind === 'shipping' || line.kind === 'onward') last = line;
+    if (line.kind === 'shipping' || line.kind === 'onward') last = { ...line, at: i + 1 };
     if (r.product) line.product = r.product;
     lines.push(Object.fromEntries(Object.entries(line).filter(([, x]) => x !== undefined && x !== null && x !== '')));
   });
@@ -187,7 +228,11 @@ export function rawFromCells(rows) {
   const out = { rows: [], totalRmb: null, totalUsd: null, rmbPerUsd: null };
   let product = null;
   for (const r of rows.slice(headerAt + 1)) {
-    const at = (key) => (col[key] === undefined ? null : r[col[key]] ?? null);
+    const cellAt = (key) => (col[key] === undefined ? null : r[col[key]] ?? null);
+    // Something in the FBA ID column that isn't an FBA ID (Annie's own reference) is kept aside.
+    const idCell = cellAt('fbaId') === null ? null : String(cellAt('fbaId')).trim();
+    const fbaId = idCell && /^FBA[0-9A-Z]{8,10}$/i.test(idCell) ? idCell : null;
+    const at = (key) => (key === 'fbaId' ? fbaId : cellAt(key));
     const amount = number(at('amount'));
     if (amount === null) continue;
     // Words on the row outside the known columns: fee labels, totals, the rate.
@@ -207,7 +252,8 @@ export function rawFromCells(rows) {
     if (at('product')) product = String(at('product'));
     out.rows.push({
       date: isoDate(at('date')),
-      fbaId: at('fbaId') ? String(at('fbaId')).trim() : null,
+      fbaId,
+      otherId: idCell && !fbaId ? idCell : null,
       tracking: at('tracking') === null ? null : String(at('tracking')),
       cartons: number(at('cartons')),
       chargedWeight: number(at('chargedWeight')),

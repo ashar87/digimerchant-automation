@@ -220,7 +220,7 @@ test('a shipment cancelled before it was ever seen is not recorded; a known one 
   assert.ok(!unsent(db).some((c) => c.kind === 'link_request'));
 });
 
-test('by default only shipments already in the dashboard are updated; Amazon is asked about them by ID only', async () => {
+test('with discovery off, only shipments already in the dashboard are updated; Amazon is asked about them by ID only', async () => {
   const db = openLandingDb(':memory:');
   saveLedger(db, {
     products: [{ id: 'A-UK', code: 'A', marketplace: 'UK', sku: 'SKU-A' }],
@@ -232,7 +232,7 @@ test('by default only shipments already in the dashboard are updated; Amazon is 
     shipments: { UK: [shipment('FBA-MINE', 'RECEIVING', 'PO-020 UK'), shipment('FBA-OTHER', 'CLOSED')] },
     items: { 'FBA-MINE': [item('SKU-A', 100, 40)], 'FBA-OTHER': [item('SKU-A', 5, 5)] },
   });
-  const report = await syncAmazon({ db, client, now: new Date('2026-10-12T06:00:00Z') });
+  const report = await syncAmazon({ db, client, discover: false, now: new Date('2026-10-12T06:00:00Z') });
   assert.deepEqual(report.created, []);
   assert.deepEqual(report.updated, ['FBA-MINE']);
   const mine = loadLedger(db).shipments.find((s) => s.id === 'FBA-MINE');
@@ -297,4 +297,23 @@ test('the sync sets receive dates from the ledger; a ledger it can’t get is a 
   assert.deepEqual(r2.errors, []);
   assert.match(r2.notes.join(' '), /UK receive dates: 403 Unauthorized/);
   assert.equal(loadLedger(db2).shipments[0].firstReceivedAt, '2026-10-11');
+});
+
+test('by default a new shipment is picked up and linked to its PO by its name; ignored ones stay out', async () => {
+  const db = openLandingDb(':memory:');
+  saveLedger(db, {
+    products: [{ id: 'A-US', code: 'A', marketplace: 'US', sku: 'SKU-A' }],
+    orders: [{ po: 'PO-030', supplier: 'S', marketplace: 'US', invoices: [{ id: 'i30', kind: 'proforma', lines: [{ kind: 'goods', product: 'A-US', qty: 100, rmb: 1000 }] }] }],
+  }, { actor: 'test' });
+  db.prepare("INSERT INTO settings (key, value) VALUES ('amazon_ignored_shipments', 'FBA-RETURNED')").run();
+  const client = recordedSpApi({
+    shipments: { US: [shipment('FBA-NEW', 'SHIPPED', 'PO-030 US'), shipment('FBA-RETURNED', 'RECEIVING')] },
+    items: { 'FBA-NEW': [item('SKU-A', 60, 0)], 'FBA-RETURNED': [item('SKU-A', 5, 5)] },
+  });
+  const report = await syncAmazon({ db, client, now: new Date('2026-10-24T06:00:00Z') });
+  assert.deepEqual(report.created, ['FBA-NEW']);
+  const s = loadLedger(db).shipments.find((x) => x.id === 'FBA-NEW');
+  assert.deepEqual(s.items.map((i) => [i.product, i.po, i.shipped]), [['A-US', 'PO-030', '60']]);
+  assert.equal(loadLedger(db).shipments.find((x) => x.id === 'FBA-RETURNED'), undefined);
+  assert.ok(client.calls.some((c) => c[0] === 'getShipments' && c[2] === 'range'));
 });

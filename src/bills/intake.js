@@ -33,15 +33,17 @@ export async function intakeBill({ db, buffer, filename, mime, source = 'upload'
   const filePath = path.join(dir, `${hash}${ext}`);
   if (!fs.existsSync(filePath)) fs.writeFileSync(filePath, buffer, { mode: 0o600 });
 
-  const shipmentIds = loadLedger(db).shipments.map((s) => s.id);
+  const ledger = loadLedger(db);
+  const billed = new Set(ledger.courierBills.flatMap((b) => b.lines.map((l) => l.shipment)).filter(Boolean));
+  const shipments = ledger.shipments.map((s) => ({ id: s.id, marketplace: s.marketplace, createdAt: s.createdAt, billed: billed.has(s.id) }));
   let reading;
   try {
     if (mime === EXCEL) {
       const raw = await readExcelBill(buffer);
-      reading = raw ? { method: 'excel', ...billFromRows(raw, shipmentIds), sourceText: raw.sourceText } : { method: 'excel', lines: [], unread: ['The bill’s lines (no FBA ID / amount columns found)'] };
+      reading = raw ? { method: 'excel', ...billFromRows(raw, shipments), sourceText: raw.sourceText } : { method: 'excel', lines: [], unread: ['The bill’s lines (no FBA ID / amount columns found)'] };
     } else if (reader) {
       const raw = await reader.read({ mime, data: buffer.toString('base64') });
-      reading = { method: 'model', model: raw.model, ...billFromRows(raw, shipmentIds) };
+      reading = { method: 'model', model: raw.model, ...billFromRows(raw, shipments) };
     } else reading = { method: 'none', lines: [], unread: ['Everything: bill reading by Gemini is not set up, so enter the lines by hand'] };
   } catch (err) {
     reading = { method: 'failed', error: err.message, lines: [], unread: [`Everything: reading failed (${err.message}); enter the lines by hand`] };

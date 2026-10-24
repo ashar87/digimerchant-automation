@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import ExcelJS from 'exceljs';
 import Database from 'better-sqlite3';
-import { billFromRows, matchShipment, readExcelBill } from '../../src/bills/read.js';
+import { billFromRows, matchShipment, readExcelBill, rawFromCells } from '../../src/bills/read.js';
 import { checkBill } from '../../src/bills/checks.js';
 import { computeLandingCosts } from '../../src/landing/engine.js';
 import { openLandingDb, saveLedger, loadLedger } from '../../src/landing/store.js';
@@ -30,18 +30,41 @@ test('bill rows become lines: domestic fees join the shipment above, fees and ra
   assert.deepEqual(r.unread, []);
 });
 
-test('a shipping row with no FBA ID is goods going to a 3PL or home: held, with its own domestic fee', () => {
-  const raw = { rows: [{ fbaId: null, service: 'UK sea', country: 'UK', amount: 700 }, { fbaId: null, country: 'domestic shipping fee', amount: 30 }], totalRmb: null, rmbPerUsd: null };
-  const r = billFromRows(raw, ON_FILE);
-  assert.deepEqual(r.lines.map((l) => [l.kind, l.shipment || null, l.rmb]), [['onward', null, '700'], ['onward', null, '30']]);
-  assert.ok(r.notes.some((n) => n.severity === 'warning' && /3PL or home/.test(n.message)));
+test('a row with no FBA ID is still a shipment to Amazon: left for the checker to pick, with likely shipments suggested', () => {
+  // Laid out like the 19 Oct bill: the agent's own reference sits where the FBA ID goes.
+  const raw = {
+    rows: [
+      { date: '2026-10-13', fbaId: null, otherId: '1234567890', service: 'Germany airline included tax', country: '德国 germany', amount: 1300 },
+      { fbaId: null, country: 'Domestic shipping fee', amount: 40 },
+      { date: '2026-10-19', fbaId: null, otherId: '1234567891', service: 'USA airline included tax', country: '美国 USA', amount: 700 },
+    ],
+    totalRmb: 2040,
+    rmbPerUsd: 6.6,
+  };
+  const shipments = [
+    { id: 'FBA99DE00001', marketplace: 'DE', createdAt: '2026-10-11', billed: false },
+    { id: 'FBA99DE00002', marketplace: 'DE', createdAt: '2026-10-09', billed: true }, // already on a bill
+    { id: 'FBA99DE00003', marketplace: 'DE', createdAt: '2026-08-01', billed: false }, // too early
+    { id: 'FBA99US00001', marketplace: 'US', createdAt: '2026-09-01', billed: false }, // too early
+  ];
+  const r = billFromRows(raw, shipments);
+  assert.deepEqual(r.lines.map((l) => [l.kind, l.shipment || null, l.rmb]), [['shipping', null, '1300'], ['domestic', null, '40'], ['shipping', null, '700']]);
+  const say = r.notes.map((n) => n.message).join('\n');
+  assert.match(say, /Line 1: no FBA ID on the bill \(1234567890 is printed where the FBA ID goes\)\. Enter its FBA shipment\. Likely: FBA99DE00001 \(DE, created 11 Oct\)\. If the goods went to a 3PL/);
+  assert.match(say, /Line 2: domestic shipping fee for line 1: give it the same FBA shipment/);
+  assert.match(say, /Line 3: no FBA ID .* No US shipment without a bill, from around 19 Oct, is on the dashboard yet/);
+});
+
+test('a shipping row with no FBA ID and no known country is still a shipping line; unread totals are listed', () => {
+  const r = billFromRows({ rows: [{ fbaId: null, service: 'UK sea', country: 'UK', amount: 700 }, { fbaId: null, country: 'domestic shipping fee', amount: 30 }], totalRmb: null, rmbPerUsd: null }, []);
+  assert.equal(r.lines[0].kind, 'shipping');
   assert.deepEqual(r.unread, ['Bill total (RMB)', 'Exchange rate']);
 });
 
 test('an ID that is not on file, and matches none by look-alike characters, is kept as read and flagged', () => {
   assert.deepEqual(matchShipment('fba99new0001', ON_FILE), { id: 'FBA99NEW0001', onFile: false });
   const r = billFromRows({ rows: [{ fbaId: 'FBA99NEW0001', service: 'x', amount: 5 }], totalRmb: 5, rmbPerUsd: 7 }, ON_FILE);
-  assert.ok(r.notes.some((n) => n.severity === 'warning' && /isn't a shipment on file yet/.test(n.message)));
+  assert.ok(r.notes.some((n) => n.severity === 'warning' && /isn't on the dashboard yet/.test(n.message)));
 });
 
 test('checks: lines against the total, USD at the bill rate, the 1% fee', () => {
@@ -114,4 +137,13 @@ INSERT INTO courier_bill_lines (bill_id, seq, kind, shipment, rmb) VALUES ('OLD'
   } finally {
     for (const f of [file, `${file}-wal`, `${file}-shm`]) fs.rmSync(f, { force: true });
   }
+});
+
+test('in Excel, a number in the FBA ID column is kept as the agent\'s reference, not taken as an ID', () => {
+  const raw = rawFromCells([
+    ['日期(date)', '序号 FBA ID', '转单号 (tracking no.)', '服务类型 (shipping line)', '发往国家 (country)', '金额 amount (RMB)'],
+    ['2026-10-19', 1234567891, '1Z0000', 'USA airline included tax', 'USA', 700],
+    ['2026-10-20', 'FBA99US00002', '1Z0001', 'USA airline included tax', 'USA', 500],
+  ]);
+  assert.deepEqual(raw.rows.map((r) => [r.fbaId, r.otherId]), [[null, '1234567891'], ['FBA99US00002', null]]);
 });

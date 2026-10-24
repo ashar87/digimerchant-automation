@@ -26,15 +26,16 @@ const SHORTFALL_SHARE = D('0.01');
 
 /**
  * `discover`: also pick up shipments that aren't in the dashboard yet (anything
- * Amazon updated recently). Off by default: Ashar wants only the shipments on
- * the dashboard kept up to date; new ones are added on the Shipments page.
+ * Amazon updated since the last run), linked to their PO by the PO in their
+ * name. On since 24 Oct 2026 (Ashar's call); ignored shipments stay out.
+ * `sinceDays` widens that window for a one-off catch-up run.
  */
-export async function syncAmazon({ db, client, now = new Date(), actor = 'amazon-sync', lookbackDays = 90, discover = false, ledgerDays = 120 }) {
+export async function syncAmazon({ db, client, now = new Date(), actor = 'amazon-sync', lookbackDays = 90, discover = true, sinceDays = null, ledgerDays = 120 }) {
   const ledger = loadLedger(db);
   const before = computeLandingCosts(ledger);
   const today = now.toISOString().slice(0, 10);
   const lastRun = db.prepare("SELECT at FROM sync_runs WHERE kind = 'amazon' AND ok = 1 ORDER BY id DESC LIMIT 1").get()?.at;
-  const since = new Date(lastRun ? Date.parse(lastRun) - 2 * 86400_000 : now.getTime() - lookbackDays * 86400_000);
+  const since = new Date(sinceDays ? now.getTime() - sinceDays * 86400_000 : lastRun ? Date.parse(lastRun) - 2 * 86400_000 : now.getTime() - lookbackDays * 86400_000);
   // Amazon rejects a window ending in the future; stay a couple of minutes behind.
   const until = new Date(now.getTime() - 2 * 60_000);
 

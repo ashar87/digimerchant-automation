@@ -6,6 +6,7 @@
  *   npm run amazon:sync                       # needs SPAPI_* in .env
  *   npm run amazon:sync -- --dry-run          # works on a copy; nothing saved or queued
  *   npm run amazon:sync -- --fixture file.json --dry-run   # recorded responses instead of Amazon
+ *   npm run amazon:sync -- --since-days 30    # look for new shipments over the last 30 days, not just since the last run
  *
  * Meant to run each morning (see deploy/digimerchant-amazon-sync.timer).
  */
@@ -23,6 +24,12 @@ const args = process.argv.slice(2);
 const dryRun = args.includes('--dry-run');
 const fixtureAt = args.indexOf('--fixture');
 const fixture = fixtureAt >= 0 ? args[fixtureAt + 1] : null;
+const sinceAt = args.indexOf('--since-days');
+const sinceDays = sinceAt >= 0 ? Number(args[sinceAt + 1]) : null;
+if (sinceAt >= 0 && !(sinceDays > 0)) {
+  console.log('--since-days needs a number of days, e.g. --since-days 30');
+  process.exit(1);
+}
 
 let client;
 if (fixture) client = recordedSpApi(JSON.parse(fs.readFileSync(fixture, 'utf8')));
@@ -43,7 +50,7 @@ if (dryRun) {
 }
 process.on('exit', () => copy && fs.rmSync(path.dirname(copy), { recursive: true, force: true }));
 
-const report = await syncAmazon({ db, client });
+const report = await syncAmazon({ db, client, sinceDays });
 console.log(`${dryRun ? 'Dry run — nothing saved. ' : ''}Checked ${report.checked} shipment(s) in ${client.marketplaces().join(', ')}.`);
 if (report.created.length) console.log(`  New: ${report.created.join(', ')}`);
 if (report.updated.length) console.log(`  Updated: ${report.updated.join(', ')}`);
