@@ -49,10 +49,10 @@ test('a bill photo is read into a draft, checked, and saved as a courier bill wi
     }
     const saved = await fetch(`${base}${draftUrl}/save`, { method: 'POST', body: form, redirect: 'manual', headers: { ...headers, 'Content-Type': 'application/x-www-form-urlencoded' } });
     assert.equal(saved.status, 303);
-    assert.match(saved.headers.get('location'), /^\/bills\/ANNIE-2026-10-02\?ok=/);
-    const bill = loadLedger(db).courierBills.find((b) => b.id === 'ANNIE-2026-10-02');
+    assert.match(saved.headers.get('location'), /^\/bills\/BILL-2026-10-02\?ok=/);
+    const bill = loadLedger(db).courierBills.find((b) => b.id === 'BILL-2026-10-02');
     assert.equal(bill.lines.length, 6);
-    assert.equal(listAttachments(db, 'courier_bill', 'ANNIE-2026-10-02')[0].filename, 'WhatsApp Image 2026-10-02 at 15.17.29.jpeg');
+    assert.equal(listAttachments(db, 'courier_bill', 'BILL-2026-10-02')[0].filename, 'WhatsApp Image 2026-10-02 at 15.17.29.jpeg');
     assert.doesNotMatch(await page('/'), /Courier bill to check/);
 
     const again = await fetch(`${base}${draftUrl}/save`, { method: 'POST', body: form, redirect: 'manual', headers: { ...headers, 'Content-Type': 'application/x-www-form-urlencoded' } });

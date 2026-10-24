@@ -38,7 +38,7 @@ const post = (path, fields) => {
 test('a courier bill entered on the dashboard turns an estimate into a billed delivery cost, with a card', async () => {
   // An earlier bill gives the estimate: £0.50 a unit.
   assert.equal((await post('/bills', { agent: 'Agent', date: '2025-12-20', statedTotalRmb: '100', rmbPerUsd: '7', line_kind: 'shipping', line_shipment: 'fbaold1', line_rmb: '100', line_description: '' })).status, 303);
-  assert.equal((await post('/payments', { date: '2025-12-21', reference: 'Agent bill', gbp: '5', alloc_type: 'bill', alloc_target: 'AGENT-2025-12-20', alloc_part: '', alloc_usd: '', alloc_rmb: '100', alloc_description: '' })).status, 303);
+  assert.equal((await post('/payments', { date: '2025-12-21', reference: 'Agent bill', gbp: '5', alloc_type: 'bill', alloc_target: 'BILL-2025-12-20', alloc_part: '', alloc_usd: '', alloc_rmb: '100', alloc_description: '' })).status, 303);
   assert.match(await page('/shipments/FBANEW1'), /Estimated from FBAOLD1/);
 
   const r = await post('/bills', {
@@ -46,12 +46,12 @@ test('a courier bill entered on the dashboard turns an estimate into a billed de
     line_kind: ['shipping', 'domestic', 'fee', 'shipping'], line_shipment: ['FBANEW1', 'FBANEW1', '', ''], line_rmb: ['900', '50', '50', ''], line_description: ['', '', 'Agent 1%', ''],
   });
   assert.equal(r.status, 303);
-  assert.equal((await post('/payments', { date: '2026-01-16', reference: 'Agent bill', gbp: '20', alloc_type: 'bill', alloc_target: 'AGENT-2026-01-15', alloc_part: '', alloc_usd: '', alloc_rmb: '1000', alloc_description: '' })).status, 303);
-  const bill = loadLedger(db).courierBills.find((b) => b.id === 'AGENT-2026-01-15');
+  assert.equal((await post('/payments', { date: '2026-01-16', reference: 'Agent bill', gbp: '20', alloc_type: 'bill', alloc_target: 'BILL-2026-01-15', alloc_part: '', alloc_usd: '', alloc_rmb: '1000', alloc_description: '' })).status, 303);
+  const bill = loadLedger(db).courierBills.find((b) => b.id === 'BILL-2026-01-15');
   assert.equal(bill.lines.length, 3);
-  assert.match(await page('/bills/AGENT-2026-01-15'), /FBANEW1/);
-  const card = unsent(db).find((c) => c.kind === 'bill_saved' && c.text.includes('AGENT-2026-01-15'));
-  assert.match(card.text, /Courier bill AGENT-2026-01-15/);
+  assert.match(await page('/bills/BILL-2026-01-15'), /FBANEW1/);
+  const card = unsent(db).find((c) => c.kind === 'bill_saved' && c.text.includes('BILL-2026-01-15'));
+  assert.match(card.text, /Courier bill BILL-2026-01-15/);
   assert.match(card.text, /FBANEW1 \(UK\): delivery .*£0\.2000 a unit/);
 });
 

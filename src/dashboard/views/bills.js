@@ -138,7 +138,8 @@ function billFromForm(ctx, existingId) {
   if (!lines.length) throw new HttpError(400, 'A bill needs at least one line');
   if (lines.length > 1 && lines.some((l) => l.rmb === undefined)) throw new HttpError(400, 'Every line needs its RMB amount (only a one-line bill may give USD alone)');
 
-  const id = existingId || uniqueId(`${(agent || 'BILL').toUpperCase().replace(/[^A-Z0-9]+/g, '-')}-${d}`, new Set(ledger.courierBills.map((b) => b.id)));
+  // Named by date only (BILL-2026-10-19), not by agent; the agent is kept on the bill.
+  const id = existingId || uniqueId(`BILL-${d}`, new Set(ledger.courierBills.map((b) => b.id)));
   const bill = compact({ id, agent, date: d, statedTotalRmb: required(number(f.get('statedTotalRmb'), 'Bill total'), 'Total on the bill'), rmbPerUsd: required(number(f.get('rmbPerUsd'), 'Rate'), 'Rate on the bill') });
   bill.lines = lines;
   return bill;
