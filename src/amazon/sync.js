@@ -29,8 +29,15 @@ const SHORTFALL_SHARE = D('0.01');
  * Amazon updated since the last run), linked to their PO by the PO in their
  * name. On since 24 Oct 2026 (Ashar's call); ignored shipments stay out.
  * `sinceDays` widens that window for a one-off catch-up run.
+ * `only`: just look up these FBA IDs (e.g. from a courier bill) and add or
+ * update them; nothing else is checked, and it doesn't count as the daily run.
  */
-export async function syncAmazon({ db, client, now = new Date(), actor = 'amazon-sync', lookbackDays = 90, discover = true, sinceDays = null, ledgerDays = 120 }) {
+export async function syncAmazon({ db, client, now = new Date(), actor = 'amazon-sync', lookbackDays = 90, discover = true, sinceDays = null, ledgerDays = 120, only = null }) {
+  if (only) {
+    only = [...new Set(only.map((id) => String(id).toUpperCase()))];
+    discover = false;
+    ledgerDays = 0;
+  }
   const ledger = loadLedger(db);
   const before = computeLandingCosts(ledger);
   const today = now.toISOString().slice(0, 10);
@@ -57,7 +64,7 @@ export async function syncAmazon({ db, client, now = new Date(), actor = 'amazon
 
   for (const [region, markets] of regions) {
     try {
-      const open = ledger.shipments.filter((s) => markets.includes(s.marketplace) && !DONE.has(s.status)).map((s) => s.id);
+      const open = only || ledger.shipments.filter((s) => markets.includes(s.marketplace) && !DONE.has(s.status)).map((s) => s.id);
       const found = new Map();
       if (open.length) for (const s of await client.getShipments(markets[0], { ids: open })) found.set(s.ShipmentId, s);
       if (discover) for (const s of await client.getShipments(markets[0], { updatedAfter: since.toISOString(), updatedBefore: until.toISOString() })) found.set(s.ShipmentId, s);
@@ -66,7 +73,7 @@ export async function syncAmazon({ db, client, now = new Date(), actor = 'amazon
         if (ignored.has(String(amazon.ShipmentId).toUpperCase())) continue;
         report.checked++;
         const existing = ledger.shipments.find((x) => x.id === amazon.ShipmentId);
-        if (!existing && !discover) continue;
+        if (!existing && !discover && !only?.includes(String(amazon.ShipmentId).toUpperCase())) continue;
         const marketplace = existing?.marketplace || (markets.length === 1 ? markets[0] : marketplaceForWarehouse(amazon.DestinationFulfillmentCenterId, markets));
         if (!marketplace) {
           // Counted as a failed run, so the next one looks again (and the Inbox says so) until the code is added.
@@ -130,7 +137,7 @@ export async function syncAmazon({ db, client, now = new Date(), actor = 'amazon
   const explained = new Set(events.filter((e) => e.type === 'closed').map((e) => e.shipment));
   report.cards += queueCostChanges(db, after, { skipShipments: explained, reason: 'After the Amazon sync.' });
 
-  db.prepare("INSERT INTO sync_runs (kind, at, ok, summary) VALUES ('amazon', ?, ?, ?)").run(now.toISOString(), report.errors.length ? 0 : 1, JSON.stringify(report));
+  if (!only) db.prepare("INSERT INTO sync_runs (kind, at, ok, summary) VALUES ('amazon', ?, ?, ?)").run(now.toISOString(), report.errors.length ? 0 : 1, JSON.stringify(report));
   return report;
 }
 

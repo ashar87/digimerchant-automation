@@ -12,6 +12,7 @@ import { loadLedger } from '../landing/store.js';
 import { INVOICE_DIR, mimeFor } from '../invoices/intake.js';
 import { readExcelBill, billFromRows } from './read.js';
 import { checkBill } from './checks.js';
+import { syncAmazon } from '../amazon/sync.js';
 
 const EXCEL = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const MODEL = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/heic']);
@@ -20,7 +21,40 @@ const MAX_BYTES = 15 * 1024 * 1024;
 /** "WhatsApp Image 2026-10-02 at 15.17.29.jpeg" → 2026-10-02: the day Annie sent it. */
 const dateInName = (filename = '') => /(20\d{2}-\d{2}-\d{2})/.exec(filename)?.[1] || null;
 
-export async function intakeBill({ db, buffer, filename, mime, source = 'upload', actor, reader = null, dir = INVOICE_DIR, today = new Date().toISOString().slice(0, 10) }) {
+/** The shipments on file, as the reader wants them: marketplace, created date, and whether a bill already covers each. */
+function shipmentsOnFile(db) {
+  const ledger = loadLedger(db);
+  const billed = new Set(ledger.courierBills.flatMap((b) => b.lines.map((l) => l.shipment)).filter(Boolean));
+  return ledger.shipments.map((s) => ({ id: s.id, marketplace: s.marketplace, createdAt: s.createdAt, billed: billed.has(s.id), po: [...new Set(s.items.map((i) => i.po).filter(Boolean))].join(', ') }));
+}
+
+/**
+ * Bills come some time after their shipments are created, so an FBA ID on the
+ * bill that isn't on the dashboard yet is looked up at Amazon and added (linked
+ * to its PO by the PO in its name) before the bill is read against the list.
+ */
+async function addShipmentsFromAmazon(db, amazon, raw, shipments) {
+  const known = new Set(shipments.map((s) => s.id));
+  const ids = [...new Set(billFromRows(raw, shipments).lines.map((l) => l.shipment).filter((id) => id && !known.has(id)))];
+  if (!ids.length || !amazon) return [];
+  try {
+    const r = await syncAmazon({ db, client: amazon, only: ids, actor: 'amazon (courier bill)' });
+    const added = new Set([...r.created, ...r.updated]);
+    const now = shipmentsOnFile(db);
+    return [
+      ...ids.filter((id) => added.has(id)).map((id) => {
+        const s = now.find((x) => x.id === id);
+        return { id, severity: 'ok', message: `${id} wasn’t on the dashboard: added from Amazon${s?.po ? `, linked to ${s.po}` : ', not linked to a PO yet (link it on its Shipments page)'}.` };
+      }),
+      ...ids.filter((id) => !added.has(id)).map((id) => ({ id, severity: 'warning', message: `Amazon has no shipment ${id} on this account: check the ID on the bill.` })),
+      ...r.errors.map((e) => ({ severity: 'warning', message: `Looking up the bill’s shipments at Amazon: ${e}` })),
+    ];
+  } catch (err) {
+    return [{ severity: 'warning', message: `Couldn’t look up ${ids.join(', ')} at Amazon (${err.message}); add them on the Shipments page.` }];
+  }
+}
+
+export async function intakeBill({ db, buffer, filename, mime, source = 'upload', actor, reader = null, amazon = null, dir = INVOICE_DIR, today = new Date().toISOString().slice(0, 10) }) {
   if (!buffer?.length) throw new Error('The file is empty');
   if (buffer.length > MAX_BYTES) throw new Error('The file is over 15 MB');
   mime = mimeFor(filename, mime);
@@ -33,18 +67,26 @@ export async function intakeBill({ db, buffer, filename, mime, source = 'upload'
   const filePath = path.join(dir, `${hash}${ext}`);
   if (!fs.existsSync(filePath)) fs.writeFileSync(filePath, buffer, { mode: 0o600 });
 
-  const ledger = loadLedger(db);
-  const billed = new Set(ledger.courierBills.flatMap((b) => b.lines.map((l) => l.shipment)).filter(Boolean));
-  const shipments = ledger.shipments.map((s) => ({ id: s.id, marketplace: s.marketplace, createdAt: s.createdAt, billed: billed.has(s.id) }));
   let reading;
   try {
+    let raw = null;
+    let method;
     if (mime === EXCEL) {
-      const raw = await readExcelBill(buffer);
-      reading = raw ? { method: 'excel', ...billFromRows(raw, shipments), sourceText: raw.sourceText } : { method: 'excel', lines: [], unread: ['The bill’s lines (no FBA ID / amount columns found)'] };
+      raw = await readExcelBill(buffer);
+      method = 'excel';
     } else if (reader) {
-      const raw = await reader.read({ mime, data: buffer.toString('base64') });
-      reading = { method: 'model', model: raw.model, ...billFromRows(raw, shipments) };
-    } else reading = { method: 'none', lines: [], unread: ['Everything: bill reading by Gemini is not set up, so enter the lines by hand'] };
+      raw = await reader.read({ mime, data: buffer.toString('base64') });
+      method = 'model';
+    }
+    if (raw) {
+      const looked = await addShipmentsFromAmazon(db, amazon, raw, shipmentsOnFile(db));
+      const read = billFromRows(raw, shipmentsOnFile(db));
+      // Once Amazon has been asked, its answer replaces the general "not on the dashboard" note.
+      const asked = looked.map((n) => n.id).filter(Boolean);
+      const notes = read.notes.filter((n) => !asked.some((id) => n.message.includes(`${id} isn't on the dashboard`)));
+      reading = { method, ...(raw.model ? { model: raw.model } : {}), ...read, notes: [...looked, ...notes], ...(raw.sourceText ? { sourceText: raw.sourceText } : {}) };
+    } else if (method === 'excel') reading = { method, lines: [], unread: ['The bill’s lines (no FBA ID / amount columns found)'] };
+    else reading = { method: 'none', lines: [], unread: ['Everything: bill reading by Gemini is not set up, so enter the lines by hand'] };
   } catch (err) {
     reading = { method: 'failed', error: err.message, lines: [], unread: [`Everything: reading failed (${err.message}); enter the lines by hand`] };
   }

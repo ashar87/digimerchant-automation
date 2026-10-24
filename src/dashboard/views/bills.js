@@ -148,7 +148,7 @@ export async function uploadBill(ctx) {
   const file = ctx.files.find((f) => f.name === 'file');
   if (!file) throw new HttpError(400, 'Choose a file to upload');
   try {
-    const draft = await intakeBill({ db: ctx.db, buffer: file.data, filename: file.filename, mime: file.mime, actor: ctx.actor, reader: ctx.billReader });
+    const draft = await intakeBill({ db: ctx.db, buffer: file.data, filename: file.filename, mime: file.mime, actor: ctx.actor, reader: ctx.billReader, amazon: ctx.spapi });
     return { redirect: `/bills/drafts/${draft.id}` };
   } catch (err) {
     throw new HttpError(400, err.message);
