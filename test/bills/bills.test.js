@@ -147,3 +147,21 @@ test('in Excel, a number in the FBA ID column is kept as the agent\'s reference,
   ]);
   assert.deepEqual(raw.rows.map((r) => [r.fbaId, r.otherId]), [[null, '1234567891'], ['FBA99US00002', null]]);
 });
+
+test('a bill whose RMB total leaves out the 1% fee is corrected to the full total its USD is worked out on', async () => {
+  // Like the 12 Sep UK bill: 1,944 + 80, "total" 2,024, then a 20 fee, then $310 at 6.60.
+  const raw = { rows: [{ fbaId: 'FBA99TEST0B1', service: 'europe sea', country: 'UK', amount: 1944 }, { fbaId: null, description: 'domestic shipping fee', amount: 80 }, { fbaId: null, description: '1% of Annie bank service fee', amount: 20 }], totalRmb: 2024, totalUsd: 310, rmbPerUsd: 6.6 };
+  const reading = billFromRows(raw, ON_FILE);
+  const { totalWithoutFee } = await import('../../src/bills/checks.js');
+  assert.equal(totalWithoutFee(reading), '2044');
+  reading.printedTotalRmb = reading.statedTotalRmb;
+  reading.statedTotalRmb = '2044';
+  const checks = checkBill(reading);
+  assert.ok(checks.some((c) => c.severity === 'warning' && /RMB total \(2,024\) leaves out the 20 RMB fee .* set to 2,044/.test(c.message)));
+  assert.ok(checks.some((c) => c.severity === 'ok' && /Lines add up to the bill total, 2,044/.test(c.message)));
+  assert.ok(checks.some((c) => c.severity === 'ok' && /the bill asks \$310.00 ✓/.test(c.message)));
+  // A total that is simply wrong isn't "corrected".
+  assert.equal(totalWithoutFee({ ...reading, statedTotalRmb: '2000' }), null);
+  // Nor when the USD doesn't fit the full total.
+  assert.equal(totalWithoutFee({ ...reading, statedTotalRmb: '2024', totalUsd: '400' }), null);
+});

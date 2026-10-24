@@ -1,5 +1,4 @@
 import { html, select, money } from '../html.js';
-import { annieSection } from './annie.js';
 import { documentsSection } from './files.js';
 import { saveLedger, deleteRecord } from '../../landing/store.js';
 import { computeLandingCosts } from '../../landing/engine.js';
@@ -54,7 +53,6 @@ export function paymentsPage(ctx) {
 <h1>Payments</h1>
 <p class="sub">Every Wise transfer, its rate, and what it paid for. The PO goes in the Wise reference.</p>
 <p><a class="button" href="/payments/new">Record a payment</a> <a href="/wise" style="margin-left:10px">From Wise</a></p>
-${annieSection(ledger)}
 <div class="card scroll"><table>
 <thead><tr><th>Date</th><th>Payment</th><th>Reference</th><th class="n key">USD</th><th class="n">GBP / EUR</th><th class="n">QB rate</th><th>Paid for</th></tr></thead>
 <tbody>${[...ledger.payments].reverse().map((p) => html`<tr><td>${p.date}</td><td><a href="/payments/${enc(p.id)}">${p.id}</a></td><td>${p.reference || ''}</td>
@@ -64,11 +62,18 @@ ${annieSection(ledger)}
   return { title: 'Payments', body };
 }
 
-export function paymentForm(ctx) {
+/**
+ * The payment form. `values` and `error`: a save that was refused comes back
+ * here with what was typed still filled in and the reason at the top, rather
+ * than on a separate page.
+ */
+export function paymentForm(ctx, { values = null, error = null } = {}) {
   const { ledger } = ctx.data;
   const id = ctx.params[0];
   let p = id ? ledger.payments.find((x) => x.id === id) : null;
   if (id && !p) throw notFound(`Payment ${id}`);
+  const existing = p;
+  if (values) p = { ...values, id: existing?.id || null };
   const preset = ctx.url.searchParams.get('po');
   const wiseId = ctx.url.searchParams.get('wise');
   const wise = !p && wiseId ? ctx.db.prepare('SELECT * FROM wise_transfers WHERE id = ?').get(wiseId) : null;
@@ -93,12 +98,13 @@ export function paymentForm(ctx) {
 <p class="muted small"><a href="/payments">Payments</a></p>
 <h1>${p?.id ? `Payment ${p.id}` : 'Record a payment'}</h1>
 ${fromWise ? html`<p class="notice">Filled in from the Wise transfer of ${fromWise.date}${fromWise.reference ? ` (“${fromWise.reference}”)` : ''}. Check the amounts against Wise and say what it paid for.</p>` : ''}
-${p?.id ? rateStatus(ctx, p) : ''}
+${error ? html`<div class="notice" role="alert" style="background:var(--bad-bg);color:var(--bad)"><b>Not saved.</b> ${/[.!?)]$/.test(error) ? error : `${error}.`} Everything you typed is still below.</div>` : ''}
+${existing ? rateStatus(ctx, existing) : ''}
 ${bill ? html`<p class="notice">Paying courier bill <a href="/bills/${enc(bill.id)}">${bill.id}</a>: ${Number(bill.statedTotalRmb || 0).toLocaleString('en-GB')} RMB${billUsd ? ` at ${bill.rmbPerUsd} = about $${billUsd}` : ''}. Add the date, the USD you sent and what it cost you (GBP, or EUR with the QB rate), then record it.${bill.lines.some((l) => l.shipment && ['UK', 'DE'].includes(ctx.data.ledger.shipments.find((s) => s.id === l.shipment)?.marketplace)) ? ' It covers UK or DE shipments, so they need the GBP (or the QB rate).' : ''}</p>` : ''}
 ${quick ? html`<p class="notice">${{ deposit: 'Deposit', balance: 'Balance', full: 'Full payment' }[quick.part]} for <a href="/orders/${enc(preset)}">${preset}</a>${quick.rmb ? html`: ${Number(quick.rmb).toLocaleString('en-GB')} RMB${quick.part === 'deposit' ? ' (30% of the invoice)' : quick.part === 'balance' ? ' (what’s still unpaid)' : ' (the whole invoice)'} is filled in. Change it if the supplier asked for a different amount, then add what you sent.` : html`. The invoice total isn’t known yet, so fill in the amount the supplier asked for.`}</p>` : ''}
 <form class="card" method="post" action="/payments${p?.id ? `/${enc(p.id)}` : ''}" data-payment data-gbp-pos="${ledger.orders.filter((o) => o.marketplace !== 'US').map((o) => o.po).join(' ')}">
-${fromWise ? html`<input type="hidden" name="wise" value="${fromWise.wise}">` : ''}
-${p?.id ? versionField(p) : ''}
+${fromWise || values?.wise ? html`<input type="hidden" name="wise" value="${fromWise?.wise || values.wise}">` : ''}
+${existing ? (values ? html`<input type="hidden" name="version" value="${values.version || ''}">` : versionField(existing)) : ''}
 <div class="grid">
   <div><label>Date (required)</label><input type="date" name="date" value="${p?.date || ''}" required></div>
   <div><label>Wise reference (required)</label><input name="reference" value="${p?.reference || ''}" placeholder="PO-020 30%" required></div>
@@ -134,6 +140,32 @@ export function savePayment(ctx) {
   const existing = existingId ? ledger.payments.find((p) => p.id === existingId) : null;
   if (existingId && !existing) throw notFound(`Payment ${existingId}`);
   if (existing) assertFresh(ctx, 'payment', existingId, existing, `/payments/${enc(existingId)}`);
+  let payment;
+  try {
+    payment = paymentFromForm(ctx, existingId);
+  } catch (err) {
+    if (err.status !== 400) throw err;
+    // Back to the same form, with what was typed and why it wasn't saved.
+    const f = ctx.form;
+    const values = Object.fromEntries(['date', 'reference', 'usd', 'gbp', 'eur', 'qbRate', 'fee', 'funding', 'notes', 'wise', 'version'].map((k) => [k, f.get(k) ?? '']));
+    values.allocations = rows(f, 'alloc', ['type', 'target', 'part', 'usd', 'rmb', 'description'], ['target', 'usd', 'rmb', 'description']);
+    return { status: 400, ...paymentForm(ctx, { values, error: err.message }) };
+  }
+  const allocations = payment.allocations;
+  const f = ctx.form;
+  const before = computeLandingCosts(ledger);
+  saveLedger(ctx.db, { payments: [payment] }, { actor: ctx.actor });
+  const wise = text(f, 'wise');
+  if (wise) ctx.db.prepare('UPDATE wise_transfers SET payment_id = ? WHERE id = ?').run(payment.id, wise);
+  const bills = allocations.filter((a) => a.type === 'bill').map((a) => a.target);
+  if (bills.length) queueBillCards(ctx.db, bills, before);
+  const firstOrder = allocations.find((a) => a.type === 'order');
+  return { redirect: `${firstOrder ? `/orders/${enc(firstOrder.target)}` : '/payments'}?ok=${enc(`Payment ${payment.id} saved.`)}` };
+}
+
+/** The payment as typed, checked; throws a 400 HttpError saying what's missing or wrong. */
+function paymentFromForm(ctx, existingId) {
+  const { ledger } = ctx.data;
   const f = ctx.form;
   const d = date(f.get('date'), 'Date', { required: true });
 
@@ -172,16 +204,9 @@ export function savePayment(ctx) {
   // UK and DE are costed in GBP: from the USD or EUR balance that needs the QB rate,
   // unless QuickBooks is connected to look it up (until then it shows as pending).
   if (!ctx.qbo && paymentsNeedingRate({ ...ledger, payments: [payment] }).length) {
-    throw new HttpError(400, `This pays a UK or DE order from ${payment.eur ? 'EUR' : 'USD'} with no GBP amount, so it needs the QB rate for ${d} (GBP per ${payment.eur ? 'EUR' : 'USD'}).`);
+    throw new HttpError(400, `This pays a UK or DE ${payment.allocations.some((a) => a.type === 'bill') ? 'order or courier bill' : 'order'} from ${payment.eur ? 'EUR' : 'USD'} with no GBP amount, so it needs the QB rate for ${d} (GBP per ${payment.eur ? 'EUR' : 'USD'}), or the GBP it cost.`);
   }
-  const before = computeLandingCosts(ledger);
-  saveLedger(ctx.db, { payments: [payment] }, { actor: ctx.actor });
-  const wise = text(f, 'wise');
-  if (wise) ctx.db.prepare('UPDATE wise_transfers SET payment_id = ? WHERE id = ?').run(payment.id, wise);
-  const bills = allocations.filter((a) => a.type === 'bill').map((a) => a.target);
-  if (bills.length) queueBillCards(ctx.db, bills, before);
-  const firstOrder = allocations.find((a) => a.type === 'order');
-  return { redirect: `${firstOrder ? `/orders/${enc(firstOrder.target)}` : '/payments'}?ok=${enc(`Payment ${payment.id} saved.`)}` };
+  return payment;
 }
 
 export function deletePayment(ctx) {

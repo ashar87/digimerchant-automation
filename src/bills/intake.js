@@ -11,7 +11,7 @@ import { ROOT } from '../config.js';
 import { loadLedger } from '../landing/store.js';
 import { INVOICE_DIR, mimeFor } from '../invoices/intake.js';
 import { readExcelBill, billFromRows } from './read.js';
-import { checkBill } from './checks.js';
+import { checkBill, totalWithoutFee } from './checks.js';
 import { syncAmazon } from '../amazon/sync.js';
 
 const EXCEL = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -91,6 +91,11 @@ export async function intakeBill({ db, buffer, filename, mime, source = 'upload'
     reading = { method: 'failed', error: err.message, lines: [], unread: [`Everything: reading failed (${err.message}); enter the lines by hand`] };
   }
   reading.date = dateInName(filename) || today;
+  const fullTotal = totalWithoutFee(reading);
+  if (fullTotal) {
+    reading.printedTotalRmb = reading.statedTotalRmb;
+    reading.statedTotalRmb = fullTotal;
+  }
   reading.checks = checkBill(reading);
 
   const res = db

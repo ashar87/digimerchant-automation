@@ -43,3 +43,49 @@ test('Pay bill fills in the payment for the bill; once paid the bill says so', a
     server.close();
   }
 });
+
+test('a payment that can’t be saved comes back on the same form, with what was typed and why', async () => {
+  const db = openLandingDb(':memory:');
+  saveLedger(db, {
+    products: [{ id: 'A-UK', code: 'A', marketplace: 'UK' }],
+    shipments: [{ id: 'FBA99UK00001', marketplace: 'UK', items: [{ product: 'A-UK', shipped: 10 }] }],
+    courierBills: [
+      { id: 'BILL-2026-10-19', agent: 'Annie', date: '2026-10-19', statedTotalRmb: 2044, rmbPerUsd: 6.6, lines: [{ kind: 'shipping', shipment: 'FBA99UK00001', rmb: 2044 }] },
+      { id: 'BILL-2026-10-22', agent: 'Annie', date: '2026-10-19', statedTotalRmb: 4161, rmbPerUsd: 6.6, lines: [{ kind: 'shipping', shipment: 'FBA99UK00001', rmb: 4161 }] },
+    ],
+  }, { actor: 'test' });
+  const server = createDashboard({ db });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const headers = { Cookie: 'actor=Ashar', Origin: base, 'Content-Type': 'application/x-www-form-urlencoded' };
+  const send = (fields, rowsIn) => {
+    const body = new URLSearchParams(fields);
+    for (const r of rowsIn) for (const [k, v] of Object.entries(r)) body.append(`alloc_${k}`, v);
+    return fetch(`${base}/payments`, { method: 'POST', body, redirect: 'manual', headers });
+  };
+  const row = (target, rmb) => ({ type: 'bill', target, part: '', usd: '', rmb, description: '' });
+  try {
+    // Two bills, one with no amount: refused, and shown again on the form.
+    const res = await send({ date: '2026-10-24', reference: 'Annie two bills', usd: '941', gbp: '' }, [row('BILL-2026-10-22', '4161'), row('BILL-2026-10-19', '')]);
+    assert.equal(res.status, 400);
+    const page = await res.text();
+    assert.match(page, /<h1>Record a payment<\/h1>/);
+    assert.match(page, /role="alert"[^>]*><b>Not saved\.<\/b> Row 2: enter the amount of the bill it pays\. Everything you typed is still below\./);
+    assert.match(page, /name="reference" value="Annie two bills"/);
+    assert.match(page, /name="usd" inputmode="decimal" data-one-of="sent" value="941"/);
+    assert.match(page, /name="alloc_target" list="targets" value="BILL-2026-10-22"/);
+    assert.match(page, /name="alloc_target" list="targets" value="BILL-2026-10-19"/);
+    assert.match(page, /name="date" value="2026-10-24"/);
+
+    // UK shipments paid from USD with no GBP: also back on the form, saying what's needed.
+    const rate = await send({ date: '2026-10-24', reference: 'Annie two bills', usd: '941' }, [row('BILL-2026-10-22', '4161'), row('BILL-2026-10-19', '2044')]);
+    assert.equal(rate.status, 400);
+    assert.match(await rate.text(), /Not saved\.<\/b> This pays a UK or DE order or courier bill from USD with no GBP amount, so it needs the QB rate for 2026-10-24/);
+
+    const ok = await send({ date: '2026-10-24', reference: 'Annie two bills', usd: '941', qbRate: '0.75' }, [row('BILL-2026-10-22', '4161'), row('BILL-2026-10-19', '2044')]);
+    assert.equal(ok.status, 303);
+    assert.equal(loadLedger(db).payments.length, 1);
+  } finally {
+    server.close();
+  }
+});

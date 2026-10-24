@@ -125,7 +125,7 @@ async function handle({ db, spapi, sheets, invoiceReader, billReader, wise, qbo,
   if (out?.text !== undefined) return send(res, 200, out.text, out.type || 'text/plain; charset=utf-8', out.headers);
   if (Buffer.isBuffer(out?.body)) return send(res, 200, out.body, out.type, out.headers);
   const inboxCount = inboxItems(ctx).filter((i) => i.count).length;
-  send(res, 200, layout({ title: out.title, path: url.pathname, actor, inboxCount, flash: url.searchParams.get('ok'), body: out.body }));
+  send(res, out.status || 200, layout({ title: out.title, path: url.pathname, actor, inboxCount, flash: url.searchParams.get('ok'), body: out.body }));
 }
 
 /** config/people.json: Tailscale login → name. Lower-cased logins; every name must be one of ACTORS. */

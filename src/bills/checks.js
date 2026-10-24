@@ -7,11 +7,34 @@ import { D, ZERO, sum, fmtRmb, fmtMoney } from '../landing/money.js';
 
 const n = (v) => (v === null || v === undefined || v === '' ? null : D(v));
 
+/**
+ * Annie sometimes prints the RMB total before adding her 1% fee, while her USD
+ * is worked out on the total with it. When the lines minus the fee come to the
+ * printed total, and the USD (if printed) agrees with the full lines at her
+ * rate, the full total is the one the bill is for. Returns it, or null.
+ */
+export function totalWithoutFee(reading) {
+  const lines = reading.lines || [];
+  const stated = n(reading.statedTotalRmb);
+  const amounts = lines.map((l) => n(l.rmb));
+  if (stated === null || !amounts.length || amounts.some((a) => a === null)) return null;
+  const all = sum(amounts);
+  const fees = sum(lines.filter((l) => l.kind === 'fee').map((l) => n(l.rmb)));
+  if (!fees.gt(0) || all.minus(stated).abs().lte('0.5') || all.minus(fees).minus(stated).abs().gt('0.5')) return null;
+  const rate = n(reading.rmbPerUsd);
+  const usd = n(reading.totalUsd);
+  if (rate !== null && usd !== null && rate.gt(0) && all.div(rate).minus(usd).abs().gt(1)) return null;
+  return all.toString();
+}
+
 export function checkBill(reading) {
   const checks = [...(reading.notes || [])];
   const ok = (message) => checks.push({ severity: 'ok', message });
   const warn = (message) => checks.push({ severity: 'warning', message });
   const lines = reading.lines || [];
+  if (reading.printedTotalRmb) {
+    warn(`The bill’s RMB total (${fmtRmb(reading.printedTotalRmb)}) leaves out the ${fmtRmb(sum(lines.filter((l) => l.kind === 'fee').map((l) => n(l.rmb))))} RMB fee printed under it; its USD is worked out on ${fmtRmb(reading.statedTotalRmb)}. The total below is set to ${fmtRmb(reading.statedTotalRmb)}.`);
+  }
 
   const amounts = lines.map((l) => n(l.rmb));
   const linesTotal = amounts.length && amounts.every((a) => a !== null) ? sum(amounts) : null;
