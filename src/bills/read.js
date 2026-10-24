@@ -107,7 +107,7 @@ export function billFromRows(raw, shipmentIds = []) {
     const rmb = v(r.amount);
     const match = matchShipment(r.fbaId, shipmentIds);
     if (match.readAs) notes.push({ severity: 'ok', message: `Line ${i + 1}: read as ${match.readAs}; taken as ${match.id}, the shipment on file it matches.` });
-    else if (match.id && !match.onFile) notes.push({ severity: 'warning', message: `Line ${i + 1}: ${match.id} isn't a shipment on file yet. Check the ID; the Amazon sync adds new shipments each morning.` });
+    else if (match.id && !match.onFile) notes.push({ severity: 'warning', message: `Line ${i + 1}: ${match.id} isn't a shipment on file yet. Check the ID, and add the shipment on the Shipments page (the Amazon check fills in its details) so the bill's cost reaches it.` });
 
     let line;
     if (DOMESTIC.test(text)) {
