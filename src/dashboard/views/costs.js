@@ -10,13 +10,13 @@ export function costsPage(ctx) {
 <h1>Landing costs by batch</h1>
 <p class="sub">One row per product per shipment — what Sellerboard receives. GBP for the UK and DE, USD for the US.</p>
 <div class="card scroll"><table>
-<thead><tr><th>Product</th><th>Mkt</th><th>Shipment</th><th class="n">Units</th><th class="n">Product</th><th class="n">Delivery</th><th class="n key">Landing</th><th>Status</th></tr></thead>
+<thead><tr><th>Product</th><th>Mkt</th><th>Shipment</th><th>Landed</th><th class="n">Units</th><th class="n">Product</th><th class="n">Delivery</th><th class="n key">Landing</th><th>Status</th></tr></thead>
 <tbody>${batches.map((b) => html`<tr><td><a href="/costs/${enc(b.shipment)}/${enc(b.product)}">${productName(ledger, b.product)}</a></td><td>${b.marketplace}</td>
-<td><a href="/shipments/${enc(b.shipment)}">${b.shipment}</a></td><td class="n">${units(b.units)}</td><td class="n">${unitCost(b.productCost, b.currency)}</td>
+<td><a href="/shipments/${enc(b.shipment)}">${b.shipment}</a></td><td>${b.batchDate || html`<span class="muted">—</span>`}</td><td class="n">${units(b.units)}</td><td class="n">${unitCost(b.productCost, b.currency)}</td>
 <td class="n">${unitCost(b.deliveryCost, b.currency)}${b.deliveryBasis === 'estimated' ? html` <span class="muted small">est.</span>` : ''}</td>
 <td class="n"><b>${unitCost(b.landingCost, b.currency)}</b></td><td>${badge(BATCH_STATUS[b.status])}</td></tr>`)}
 </tbody></table></div>
-<p class="muted small">Final: paid, closed and billed. Awaiting Amazon count: costs known, unit count not final. Estimated: delivery borrowed from an earlier shipment. Deposit only: balance not paid yet, cost projected.</p>`;
+<p class="muted small">Landed: the day Amazon started receiving the shipment, from its inventory ledger (also the Sellerboard batch date); — until it arrives. Final: paid, closed and billed. Awaiting Amazon count: costs known, unit count not final. Estimated: delivery borrowed from an earlier shipment. Deposit only: balance not paid yet, cost projected.</p>`;
   return { title: 'Costs', body };
 }
 
