@@ -1,29 +1,38 @@
 /**
  * The Sellerboard cost feed: one row per product per shipment, read daily by
- * Sellerboard's automatic COGS import (Settings → Automation) from a Google
- * Sheet or a CSV link. FIFO, so each shipment's stock sells at its own cost.
+ * Sellerboard's automatic COGS import from a Google Sheet, or uploaded by hand
+ * (Products → Import, accounting method by batch). FIFO, so each shipment's
+ * stock sells at its own cost.
  *
  * Two Sellerboard accounts, two files: the UK and DE in one, costed in GBP
  * (Sellerboard wants GBP for DE too), and the US in the other, in USD.
  * A batch only goes in once Amazon starts receiving it, dated that day: that's
  * when the stock becomes sellable and the inventory level starts to rise.
  *
- * Columns, names and order as in Sellerboard's own product export (Products →
- * Export, checked 13 Oct 2026), with dates day/month/year as it writes them, so
- * the file imports without remapping. The dashboard page shows a few more
- * (currency, shipment, status) that stay out of the file.
+ * The file is Sellerboard's own import template: all 17 columns, names and
+ * order as its product export writes them, dates day/month/year. Only the batch
+ * date, cost, marketplace and quantity are ours; every other column is copied
+ * from Sellerboard's own row for that SKU (see catalog.js), so an import can't
+ * blank a product's VAT or EAN. Checked on 25 Oct 2026: an import adds the
+ * batch beside the others, a second import of the same batch doesn't add it
+ * twice, and the cost must have at most 2 decimals ("Wrong format COST").
  */
-import { fmt4 } from '../landing/money.js';
+import ExcelJS from 'exceljs';
+import { D, fmt4 } from '../landing/money.js';
 
-export const COLUMNS = [
-  { key: 'asin', header: 'ASIN' },
+export const HEADERS = ['ASIN', 'SKU', 'Title', 'Labels', 'CostPeriodStartDate', 'Cost', 'DomesticShippingCost', 'RestofworldShippingCost', 'ShippingProfile', 'Value_of_unsellable_returns', 'VAT', 'VAT_CATEGORY', 'Hide', 'Marketplace', 'BatchQuantity', 'EAN', 'UPC'];
+
+/** What the dashboard page shows of each row; the file itself has all of HEADERS. */
+export const PAGE_COLUMNS = [
   { key: 'sku', header: 'SKU' },
-  { key: 'startDate', header: 'CostPeriodStartDate' },
+  { key: 'asin', header: 'ASIN' },
+  { key: 'startDate', header: 'Batch date' },
   { key: 'cost', header: 'Cost' },
   { key: 'marketplace', header: 'Marketplace' },
-  { key: 'quantity', header: 'BatchQuantity' },
+  { key: 'quantity', header: 'Units' },
+  { key: 'shipment', header: 'Shipment' },
+  { key: 'status', header: 'Status' },
 ];
-export const PAGE_COLUMNS = [...COLUMNS, { key: 'currency', header: 'Currency' }, { key: 'shipment', header: 'Shipment' }, { key: 'status', header: 'Status' }];
 
 export const ACCOUNTS = {
   'uk-de': { label: 'UK + DE', currency: 'GBP', marketplaces: ['UK', 'DE'] },
@@ -34,13 +43,24 @@ export const accountOf = (marketplace) => Object.keys(ACCOUNTS).find((a) => ACCO
 const dayMonthYear = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 
 const MARKETPLACE_NAMES = { UK: 'Amazon.co.uk', DE: 'Amazon.de', US: 'Amazon.com' };
+export const MARKETPLACE_CODES = Object.fromEntries(Object.entries(MARKETPLACE_NAMES).map(([k, v]) => [v, k]));
 const STATUS_WORDS = { final: 'final', count_pending: 'awaiting Amazon count', estimated: 'delivery estimated' };
+
+/** Sellerboard's own row for this product: its row in this marketplace, else its row with no cost yet. */
+function sellerboardRow(rows, marketplace, product) {
+  for (const id of [product.sku, product.asin].filter(Boolean)) {
+    const hit = rows.get(`${marketplace}|${id}`) || rows.get(`|${id}`) || [...rows.values()].find((v) => v.ASIN === id && v.Marketplace === marketplace);
+    if (hit) return hit;
+  }
+  return null;
+}
 
 /**
  * Splits batches into what Sellerboard gets and what's held back, with the
- * reason for each one held. `account` narrows it to one Sellerboard account.
+ * reason for each one held. `account` narrows it to one Sellerboard account;
+ * `catalog` is Sellerboard's product list per account (loadCatalog).
  */
-export function buildFeed(ledger, result, { includeManual = false, shipment = null, account = null } = {}) {
+export function buildFeed(ledger, result, { includeManual = false, shipment = null, account = null, catalog = {} } = {}) {
   const shipments = new Map(ledger.shipments.map((s) => [s.id, s]));
   const products = new Map(ledger.products.map((p) => [p.id, p]));
   const orders = new Map(ledger.orders.map((o) => [o.po, o]));
@@ -49,7 +69,8 @@ export function buildFeed(ledger, result, { includeManual = false, shipment = nu
 
   for (const b of result.batches) {
     if (shipment && b.shipment !== shipment) continue;
-    if (account && accountOf(b.marketplace) !== account) continue;
+    const acct = accountOf(b.marketplace);
+    if (account && acct !== account) continue;
     const s = shipments.get(b.shipment);
     const p = products.get(b.product);
     const hold = (reason) => held.push({ shipment: b.shipment, product: b.product, code: b.code, marketplace: b.marketplace, reason });
@@ -80,19 +101,39 @@ export function buildFeed(ledger, result, { includeManual = false, shipment = nu
       hold(`${b.product} has no SKU or ASIN in the product list.`);
       continue;
     }
+    const marketplace = MARKETPLACE_NAMES[b.marketplace];
+    if (!catalog[acct]) {
+      hold(`Sellerboard’s product list for the ${ACCOUNTS[acct].label} account isn’t uploaded yet (Sellerboard page).`);
+      continue;
+    }
+    const base = sellerboardRow(catalog[acct].rows, marketplace, p);
+    if (!base) {
+      hold(`${p.sku || p.asin} on ${marketplace} isn’t in Sellerboard’s product list. Check the SKU, or upload a fresh export from Sellerboard.`);
+      continue;
+    }
+    const cost = Number(D(b.landingCost).toFixed(2));
+    const values = HEADERS.map((h) => base[h] ?? null);
+    const set = (h, v) => (values[HEADERS.indexOf(h)] = v);
+    set('ASIN', base.ASIN || p.asin || null);
+    set('CostPeriodStartDate', dayMonthYear(s.firstReceivedAt));
+    set('Cost', cost);
+    set('Marketplace', marketplace);
+    set('BatchQuantity', Number(b.units.toString()));
     rows.push({
-      sku: p.sku || '',
-      asin: p.asin || '',
-      marketplace: MARKETPLACE_NAMES[b.marketplace],
+      sku: base.SKU,
+      asin: values[0] || '',
+      marketplace,
       date: s.firstReceivedAt,
       startDate: dayMonthYear(s.firstReceivedAt),
       quantity: b.units.toString(),
-      cost: fmt4(b.landingCost),
+      cost: cost.toFixed(2),
+      exactCost: fmt4(b.landingCost),
       currency: b.currency,
       shipment: b.shipment,
-      account: accountOf(b.marketplace),
+      account: acct,
       status: STATUS_WORDS[b.status] || b.status,
       product: b.product,
+      values,
     });
   }
   rows.sort((a, b) => a.marketplace.localeCompare(b.marketplace) || (a.sku || a.asin).localeCompare(b.sku || b.asin) || a.date.localeCompare(b.date));
@@ -100,15 +141,15 @@ export function buildFeed(ledger, result, { includeManual = false, shipment = nu
 }
 
 export function feedValues(rows) {
-  return [COLUMNS.map((c) => c.header), ...rows.map((r) => COLUMNS.map((c) => r[c.key] ?? ''))];
+  return [HEADERS, ...rows.map((r) => r.values.map((v) => v ?? ''))];
 }
 
-export function toCsv(rows) {
-  const cell = (v) => {
-    const s = String(v ?? '');
-    // Quote anything with a separator, and defuse spreadsheet formulas.
-    const safe = /^[=+\-@]/.test(s) && !/^-?\d/.test(s) ? `'${s}` : s;
-    return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
-  };
-  return feedValues(rows).map((r) => r.map(cell).join(',')).join('\r\n') + '\r\n';
+/** The rows as Sellerboard's import template (.xlsx), costs shown to 2 decimals as in its own files. */
+export async function toXlsx(rows) {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('TDSheet');
+  ws.addRow(HEADERS);
+  for (const r of rows) ws.addRow(r.values.map((v) => v ?? null));
+  ws.getColumn(HEADERS.indexOf('Cost') + 1).numFmt = '0.00';
+  return Buffer.from(await wb.xlsx.writeBuffer());
 }

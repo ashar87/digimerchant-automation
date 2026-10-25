@@ -5,6 +5,8 @@ import { openLandingDb, saveLedger, loadLedger } from '../../src/landing/store.j
 import { createDashboard } from '../../src/dashboard/server.js';
 import { unsent } from '../../src/notify/outbox.js';
 import { versionOf } from '../../src/dashboard/versions.js';
+import ExcelJS from 'exceljs';
+import { HEADERS } from '../../src/sellerboard/feed.js';
 
 let db, server, base;
 const written = [];
@@ -55,17 +57,41 @@ test('a courier bill entered on the dashboard turns an estimate into a billed de
   assert.match(card.text, /FBANEW1 \(UK\): delivery .*£0\.2000 a unit/);
 });
 
-test('the Sellerboard page lists each account’s rows, offers its CSV, and writes its sheet', async () => {
+const xlsxRows = async (q) => {
+  const res = await fetch(`${base}/sellerboard.xlsx${q}`, { headers: { Cookie: 'actor=Ashar' } });
+  if (res.status !== 200) return res.status;
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(Buffer.from(await res.arrayBuffer()));
+  const rows = [];
+  wb.worksheets[0].eachRow((r) => rows.push(r.values.slice(1)));
+  return rows;
+};
+
+test('the Sellerboard page waits for Sellerboard’s product list, then offers each account’s import file and writes its sheet', async () => {
+  assert.match(await page('/sellerboard'), /product list for the UK \+ DE account isn’t uploaded/);
+
+  // Sellerboard's own export for the UK + DE account, uploaded on the page.
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('TDSheet');
+  ws.addRow(HEADERS);
+  ws.addRow(HEADERS.map((h) => ({ ASIN: 'B000UK', SKU: 'SKU-A', Title: 'Product A', Hide: 'NO', VAT: 20, Marketplace: 'Amazon.co.uk' })[h] ?? null));
+  const upload = new FormData();
+  upload.append('account', 'us');
+  upload.append('file', new Blob([await wb.xlsx.writeBuffer()]), 'export.xlsx');
+  const send = (form) => fetch(`${base}/sellerboard/catalog`, { method: 'POST', body: form, redirect: 'manual', headers: { Cookie: 'actor=Ashar', Origin: base } });
+  assert.equal((await send(upload)).status, 400); // a UK + DE export offered as the US one
+  upload.set('account', 'uk-de');
+  assert.equal((await send(upload)).status, 303);
+
   const html = await page('/sellerboard');
   assert.match(html, /UK \+ DE account \(GBP\): 1 row</);
   assert.match(html, /US account \(USD\): 0 rows/);
-  assert.equal((await fetch(`${base}/sellerboard.csv`, { headers: { Cookie: 'actor=Ashar' } })).status, 400); // which account?
-  assert.equal((await (await fetch(`${base}/sellerboard.csv?account=us`, { headers: { Cookie: 'actor=Ashar' } })).text()).trim().split('\n').length, 1);
-  const csv = await fetch(`${base}/sellerboard.csv?account=uk-de`, { headers: { Cookie: 'actor=Ashar' } });
-  assert.match(csv.headers.get('content-disposition'), /attachment/);
-  const text = await csv.text();
-  assert.match(text, /^ASIN,SKU,CostPeriodStartDate,Cost,Marketplace,BatchQuantity\r\n/);
-  assert.match(text, /,SKU-A,12\/01\/2026,1\.2000,Amazon\.co\.uk,100\r\n/);
+  assert.match(html, /Sellerboard’s product list: 1 rows, uploaded/);
+  assert.equal(await xlsxRows(''), 400); // which account?
+  assert.equal((await xlsxRows('?account=us')).length, 1); // just the header
+  const rows = await xlsxRows('?account=uk-de');
+  assert.deepEqual(rows[0], HEADERS);
+  assert.deepEqual([rows[1][0], rows[1][1], rows[1][2], rows[1][4], rows[1][5], rows[1][10], rows[1][13], rows[1][14]], ['B000UK', 'SKU-A', 'Product A', '12/01/2026', 1.2, 20, 'Amazon.co.uk', 100]);
   const r = await post('/sellerboard/publish', {});
   assert.equal(r.status, 303);
   assert.equal(written.at(-1).length, 2);
@@ -78,11 +104,10 @@ test('ticking “typed into Sellerboard by hand” takes a shipment out of the f
   assert.match(await page('/sellerboard'), /UK \+ DE account \(GBP\): 0 rows/);
 });
 
-test('the test download can include batches typed in by hand, and narrow to one shipment', async () => {
-  const csv = async (q) => (await fetch(`${base}/sellerboard.csv?account=uk-de${q.replace('?', '&')}`, { headers: { Cookie: 'actor=Ashar' } })).text();
-  assert.doesNotMatch(await csv(''), /FBANEW1/); // typed by hand: left out of the normal file
-  assert.match(await csv('?all=1'), /,SKU-A,12\/01\/2026,1\.2000,Amazon\.co\.uk,100/);
-  assert.match(await csv('?all=1&shipment=FBANEW1'), /SKU-A/);
-  assert.equal((await csv('?all=1&shipment=FBANOPE')).trim().split('\n').length, 1); // just the header
-  assert.match(await page('/sellerboard'), /Testing the import, or comparing/);
+test('the comparison download can include batches typed in by hand, and narrow to one shipment', async () => {
+  assert.equal((await xlsxRows('?account=uk-de')).length, 1); // typed by hand: left out of the normal file
+  assert.equal((await xlsxRows('?account=uk-de&all=1'))[1][1], 'SKU-A');
+  assert.equal((await xlsxRows('?account=uk-de&all=1&shipment=FBANEW1')).length, 2);
+  assert.equal((await xlsxRows('?account=uk-de&all=1&shipment=FBANOPE')).length, 1); // just the header
+  assert.match(await page('/sellerboard'), /Comparing with what's in Sellerboard/);
 });

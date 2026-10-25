@@ -428,8 +428,10 @@ npm test
 - `src/notify/` holds the queue of WhatsApp cards (shipment closed, link request, shortfall,
   cost change over 2%). The listener owns the WhatsApp session and will send from this queue;
   until that's wired in, the cards wait on the dashboard's Messages page.
-- `src/sellerboard/` builds the cost feed (one row per product per shipment, FIFO, GBP for the
-  UK and DE, USD for the US) and writes it to the Google Sheet Sellerboard reads, or to CSV.
+- `src/sellerboard/` builds the cost feed (one row per product per shipment, FIFO; one file per
+  Sellerboard account, UK + DE in GBP and the US in USD) as Sellerboard's own 17-column import
+  template, copying every non-batch column from Sellerboard's uploaded product export, and
+  writes it to the Google Sheet each account reads, or to .xlsx.
   Unchecked imports, deposit-only orders and shipments typed into Sellerboard by hand are held
   back, each with its reason.
 - `src/invoices/` reads supplier invoices: Excel exactly, PDFs and photos with Gemini (blanks

@@ -186,6 +186,14 @@ CREATE TABLE IF NOT EXISTS bill_drafts (
   saved_as   TEXT                       -- courier bill id once saved
 );
 
+CREATE TABLE IF NOT EXISTS sellerboard_catalogs (
+  account     TEXT PRIMARY KEY,           -- uk-de | us: one Sellerboard account each
+  uploaded_at TEXT NOT NULL,
+  uploaded_by TEXT NOT NULL,
+  filename    TEXT,
+  rows        TEXT NOT NULL               -- JSON: Sellerboard's product export, a row per SKU per marketplace
+);
+
 CREATE TABLE IF NOT EXISTS invoice_drafts (
   id         INTEGER PRIMARY KEY,
   created_at TEXT NOT NULL,

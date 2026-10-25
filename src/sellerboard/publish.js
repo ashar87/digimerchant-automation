@@ -2,6 +2,7 @@ import { loadLedger } from '../landing/store.js';
 import { computeLandingCosts } from '../landing/engine.js';
 import { createSheetsWriter, sheetsConfigured } from '../google/sheets.js';
 import { ACCOUNTS, buildFeed, feedValues } from './feed.js';
+import { loadCatalog } from './catalog.js';
 
 /** A Sheets writer for each Sellerboard account whose sheet is configured. */
 export function sheetWriters(cfg = {}) {
@@ -21,9 +22,10 @@ export function sheetWriters(cfg = {}) {
 export async function publishFeed({ db, writers, now = new Date() }) {
   const ledger = loadLedger(db);
   const result = computeLandingCosts(ledger);
+  const catalog = loadCatalog(db);
   const results = [];
   for (const [account, writer] of Object.entries(writers)) {
-    const feed = buildFeed(ledger, result, { account });
+    const feed = buildFeed(ledger, result, { account, catalog });
     const kind = `sellerboard:${account}`;
     try {
       const out = await writer.replaceTab(feedValues(feed.rows));
