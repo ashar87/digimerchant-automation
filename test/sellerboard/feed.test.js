@@ -8,6 +8,8 @@ import path from 'node:path';
 import { computeLandingCosts } from '../../src/landing/engine.js';
 import { buildFeed, toCsv, feedValues } from '../../src/sellerboard/feed.js';
 import { createSheetsWriter } from '../../src/google/sheets.js';
+import { publishFeed } from '../../src/sellerboard/publish.js';
+import { openLandingDb, saveLedger } from '../../src/landing/store.js';
 import { encryptFile, decryptFile } from '../../src/landing/backup.js';
 
 const ledger = () => ({
@@ -51,6 +53,33 @@ test('one row per product per shipment, GBP for the UK, USD for the US, added an
   l.shipments[1].firstReceivedAt = '2026-02-20';
   const us = buildFeed(l, computeLandingCosts(l)).rows.find((r) => r.shipment === 'FBA-US');
   assert.deepEqual({ currency: us.currency, asin: us.asin, date: us.date }, { currency: 'USD', asin: 'B000TEST', date: '2026-02-20' });
+});
+
+test('each Sellerboard account gets only its own marketplaces: UK and DE in one, the US in the other', () => {
+  const l = ledger();
+  l.shipments[1].firstReceivedAt = '2026-02-20';
+  const result = computeLandingCosts(l);
+  assert.deepEqual(buildFeed(l, result, { account: 'uk-de' }).rows.map((r) => r.shipment), ['FBA-UK']);
+  assert.deepEqual(buildFeed(l, result, { account: 'us' }).rows.map((r) => [r.shipment, r.currency, r.account]), [['FBA-US', 'USD', 'us']]);
+  assert.ok(buildFeed(l, result, { account: 'us' }).held.every((h) => h.marketplace === 'US'));
+});
+
+test('each account’s sheet is written on its own, and one failing doesn’t stop the other', async () => {
+  const db = openLandingDb(':memory:');
+  const l = ledger();
+  l.shipments[1].firstReceivedAt = '2026-02-20';
+  saveLedger(db, l, { actor: 'test' });
+  const got = {};
+  const writers = {
+    'uk-de': { replaceTab: async (values) => ((got['uk-de'] = values), { rows: values.length - 1 }) },
+    us: { replaceTab: async () => { throw new Error('no access'); } },
+  };
+  const r = await publishFeed({ db, writers });
+  assert.equal(r.ok, false);
+  assert.deepEqual(r.results, [{ account: 'uk-de', ok: true, rows: 1 }, { account: 'us', ok: false, error: 'no access' }]);
+  assert.equal(got['uk-de'][1][4], 'Amazon.co.uk');
+  const runs = db.prepare('SELECT kind, ok FROM sync_runs ORDER BY id').all().map((x) => `${x.kind}:${x.ok}`);
+  assert.deepEqual(runs, ['sellerboard:uk-de:1', 'sellerboard:us:0']);
 });
 
 test('a shipment marked received or closed without a receiving date is held, with what to do', () => {

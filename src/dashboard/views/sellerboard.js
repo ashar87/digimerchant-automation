@@ -1,37 +1,52 @@
 import { html } from '../html.js';
-import { buildFeed, toCsv, PAGE_COLUMNS } from '../../sellerboard/feed.js';
+import { ACCOUNTS, buildFeed, toCsv, PAGE_COLUMNS } from '../../sellerboard/feed.js';
 import { publishFeed } from '../../sellerboard/publish.js';
 import { HttpError } from '../errors.js';
 import { enc } from './common.js';
 import { lastSync } from './amazon.js';
 
+// The account is in its own column heading, so it's left out of each table.
+const COLUMNS = PAGE_COLUMNS.filter((c) => c.key !== 'currency');
+
+function sheetStatus(ctx, account) {
+  if (!ctx.sheets?.[account]) return html`<span class="muted small">Google Sheet not set up: download the CSV and upload it in Sellerboard by hand.</span>`;
+  const last = lastSync(ctx.db, `sellerboard:${account}`);
+  if (!last) return 'Google Sheet not written yet.';
+  return html`Google Sheet last written ${last.at.slice(0, 16).replace('T', ' ')} ${last.ok ? `✓ (${last.summary.rows} rows)` : html`<span class="badge bad">failed: ${(last.summary.errors || []).join('; ')}</span>`}`;
+}
+
 export function sellerboardPage(ctx) {
   const { ledger, result } = ctx.data;
   const feed = buildFeed(ledger, result);
-  const last = lastSync(ctx.db, 'sellerboard');
+  const all = buildFeed(ledger, result, { includeManual: true });
+  const anySheet = Object.keys(ctx.sheets || {}).length > 0;
   const body = html`
 <h1>Sellerboard</h1>
-<p class="sub">One row per product per shipment, read by Sellerboard’s automatic COGS import each day. A shipment is added the day Amazon starts receiving it, and dated that day. GBP for the UK and DE, USD for the US.</p>
-${ctx.sheets
-  ? html`<form class="card" method="post" action="/sellerboard/publish">${last ? html`Google Sheet last written ${last.at.slice(0, 16).replace('T', ' ')} ${last.ok ? `✓ (${last.summary.rows} rows)` : html`<span class="badge bad">failed: ${(last.summary.errors || []).join('; ')}</span>`}` : 'Google Sheet not written yet.'}
-<button class="ghost" style="margin-left:12px">Write now</button></form>`
-  : html`<p class="notice">The Google Sheet isn’t set up yet. Until it is, download the CSV below and upload it in Sellerboard by hand.</p>`}
-<p><a class="button" href="/sellerboard.csv">Download CSV</a> <span class="muted small">It holds your unit costs; keep it private.</span></p>
-${(() => {
-  const all = buildFeed(ledger, result, { includeManual: true });
-  const byShipment = [...new Set(all.rows.map((r) => r.shipment))];
-  return html`<details class="card"><summary>Testing the import, or comparing with what's in Sellerboard (${all.rows.length} batch rows, including those typed in by hand)</summary>
-<p class="small">Sellerboard: <b>Products → Import → By batch</b>. Try <b>one shipment</b> first and check what Sellerboard does with a batch it already has (adds a second one, or replaces it?) before uploading everything.</p>
-<p><a href="/sellerboard.csv?all=1">Download all ${all.rows.length} rows</a></p>
-<ul class="docs small">${byShipment.map((id) => html`<li><a href="/sellerboard.csv?all=1&amp;shipment=${enc(id)}">${id}</a> <span class="muted">${all.rows.filter((r) => r.shipment === id).map((r) => `${r.sku || r.asin} ${r.cost} ${r.currency}`).join(' · ')}</span></li>`)}</ul></details>`;
-})()}
+<p class="sub">One row per product per shipment, for each Sellerboard account: UK + DE in GBP, the US in USD. A shipment is added the day Amazon starts receiving it, and dated that day.</p>
+${anySheet ? html`<form method="post" action="/sellerboard/publish"><button class="ghost">Write the Google Sheets now</button></form>` : ''}
 
-<h2>${feed.rows.length} row${feed.rows.length === 1 ? '' : 's'} for Sellerboard</h2>
-${feed.rows.length
-  ? html`<div class="card scroll"><table><thead><tr>${PAGE_COLUMNS.map((c) => html`<th>${c.header}</th>`)}</tr></thead><tbody>
-${feed.rows.map((r) => html`<tr>${PAGE_COLUMNS.map((c) => html`<td class="${['quantity', 'cost'].includes(c.key) ? 'n' : ''}">${r[c.key]}</td>`)}</tr>`)}
+${Object.entries(ACCOUNTS).map(([account, a]) => {
+  const rows = feed.rows.filter((r) => r.account === account);
+  return html`<h2>${a.label} account (${a.currency}): ${rows.length} row${rows.length === 1 ? '' : 's'}</h2>
+<p><a class="button" href="/sellerboard.csv?account=${account}">Download ${a.label} CSV</a> ${sheetStatus(ctx, account)}</p>
+${rows.length
+  ? html`<div class="card scroll"><table><thead><tr>${COLUMNS.map((c) => html`<th>${c.header}</th>`)}</tr></thead><tbody>
+${rows.map((r) => html`<tr>${COLUMNS.map((c) => html`<td class="${['quantity', 'cost'].includes(c.key) ? 'n' : ''}">${r[c.key]}</td>`)}</tr>`)}
 </tbody></table></div>`
-  : html`<p class="muted">Nothing yet.</p>`}
+  : html`<p class="muted">Nothing yet.</p>`}`;
+})}
+<p class="muted small">The CSVs hold your unit costs; keep them private.</p>
+
+<details class="card"><summary>Testing the import, or comparing with what's in Sellerboard (${all.rows.length} batch rows, including those typed in by hand)</summary>
+<p class="small">Sellerboard: <b>Products → Import → By batch</b>, in the right account. Sellerboard support says an import adds a batch beside the ones already there and never replaces them. Still to check: importing the <b>same</b> batch a second time. Does it update that batch or add a duplicate? Try it with one shipment before connecting a sheet.</p>
+${Object.entries(ACCOUNTS).map(([account, a]) => {
+  const ids = [...new Set(all.rows.filter((r) => r.account === account).map((r) => r.shipment))];
+  return html`<h3>${a.label}</h3>${ids.length
+    ? html`<ul class="docs small">${ids.map((id) => html`<li><a href="/sellerboard.csv?account=${account}&amp;all=1&amp;shipment=${enc(id)}">${id}</a> <span class="muted">${all.rows.filter((r) => r.shipment === id).map((r) => `${r.sku || r.asin} ${r.cost} ${r.currency}`).join(' · ')}</span></li>`)}</ul>
+<p class="small"><a href="/sellerboard.csv?account=${account}&amp;all=1">Download all ${a.label} rows</a></p>`
+    : html`<p class="muted small">None.</p>`}`;
+})}
+</details>
 
 <h2>Held back (${feed.held.length})</h2>
 <div class="card scroll"><table><thead><tr><th>Batch</th><th>Why</th></tr></thead><tbody>
@@ -43,17 +58,21 @@ ${feed.held.map((h) => html`<tr><td><a href="/costs/${enc(h.shipment)}/${enc(h.p
 
 export function sellerboardCsv(ctx) {
   const { ledger, result } = ctx.data;
+  // Each Sellerboard account gets its own file, so the account is always named.
+  const account = ctx.url.searchParams.get('account');
+  if (!ACCOUNTS[account]) throw new HttpError(400, `Say which Sellerboard account: ${Object.keys(ACCOUNTS).join(' or ')}.`);
   // ?all=1 adds the batches typed into Sellerboard by hand (to compare, or to test the import);
   // ?shipment=FBA… narrows the file to one shipment, so a test touches as little as possible.
   const all = ctx.url.searchParams.get('all') === '1';
   const shipment = ctx.url.searchParams.get('shipment') || null;
-  const rows = buildFeed(ledger, result, { includeManual: all, shipment }).rows;
-  const name = `sellerboard-cogs-${shipment || (all ? 'all' : 'new')}-${new Date().toISOString().slice(0, 10)}.csv`;
+  const rows = buildFeed(ledger, result, { includeManual: all, shipment, account }).rows;
+  const name = `sellerboard-cogs-${account}-${shipment || (all ? 'all' : 'new')}-${new Date().toISOString().slice(0, 10)}.csv`;
   return { text: toCsv(rows), type: 'text/csv; charset=utf-8', headers: { 'Content-Disposition': `attachment; filename="${name.replace(/[^\w.-]/g, '_')}"` } };
 }
 
 export async function publishSellerboard(ctx) {
-  if (!ctx.sheets) throw new HttpError(400, 'The Google Sheet isn’t set up yet.');
-  const r = await publishFeed({ db: ctx.db, writer: ctx.sheets });
-  return { redirect: `/sellerboard?ok=${enc(r.ok ? `Google Sheet updated: ${r.rows} row(s).` : `Writing the sheet failed: ${r.error}`)}` };
+  if (!Object.keys(ctx.sheets || {}).length) throw new HttpError(400, 'The Google Sheets aren’t set up yet.');
+  const r = await publishFeed({ db: ctx.db, writers: ctx.sheets });
+  const said = r.results.map((x) => (x.ok ? `${ACCOUNTS[x.account].label} sheet updated: ${x.rows} row(s).` : `${ACCOUNTS[x.account].label} sheet failed: ${x.error}`));
+  return { redirect: `/sellerboard?ok=${enc(said.join(' '))}` };
 }

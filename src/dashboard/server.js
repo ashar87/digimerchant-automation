@@ -15,7 +15,7 @@ import { config, ROOT } from '../config.js';
 import { openLandingDb, loadLedger } from '../landing/store.js';
 import { seedTaskRefs, whatsappRefCounter } from '../tasks/board.js';
 import { createSpApi, spApiConfigured } from '../amazon/spapi.js';
-import { createSheetsWriter, sheetsConfigured } from '../google/sheets.js';
+import { sheetWriters } from '../sellerboard/publish.js';
 import { geminiInvoiceReader } from '../invoices/model.js';
 import { geminiBillReader } from '../bills/read.js';
 import { createWise, wiseConfigured } from '../wise/client.js';
@@ -223,7 +223,8 @@ if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   const port = Number(process.env.DASHBOARD_PORT || 3210);
   const db = openLandingDb(config.landingDbPath);
   const spapi = spApiConfigured(config.spapi) ? createSpApi(config.spapi) : null;
-  const sheets = sheetsConfigured(config.sellerboard) ? createSheetsWriter(config.sellerboard) : null;
+  // A writer per Sellerboard account whose Google Sheet is set up; none until then.
+  const sheets = sheetWriters(config.sellerboard);
   // PDFs and photos are read by Gemini only when a key is set; Excel never needs it.
   const gemini = config.geminiApiKey ? await import('../providers/gemini.js') : null;
   const invoiceReader = gemini ? geminiInvoiceReader(gemini) : null;

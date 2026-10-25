@@ -21,7 +21,7 @@ before(async () => {
       { id: 'FBANEW1', marketplace: 'UK', status: 'CLOSED', createdAt: '2026-01-10', firstReceivedAt: '2026-01-12', items: [{ product: 'A-UK', po: 'PO-1', shipped: 100, received: 100 }] },
     ],
   }, { actor: 'test' });
-  const sheets = { replaceTab: async (values) => (written.push(values), { rows: values.length - 1 }) };
+  const sheets = { 'uk-de': { replaceTab: async (values) => (written.push(values), { rows: values.length - 1 }) } };
   server = createDashboard({ db, sheets });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   base = `http://127.0.0.1:${server.address().port}`;
@@ -55,10 +55,13 @@ test('a courier bill entered on the dashboard turns an estimate into a billed de
   assert.match(card.text, /FBANEW1 \(UK\): delivery .*£0\.2000 a unit/);
 });
 
-test('the Sellerboard page lists the rows, offers the CSV, and writes the sheet', async () => {
+test('the Sellerboard page lists each account’s rows, offers its CSV, and writes its sheet', async () => {
   const html = await page('/sellerboard');
-  assert.match(html, /1 row for Sellerboard/);
-  const csv = await fetch(`${base}/sellerboard.csv`, { headers: { Cookie: 'actor=Ashar' } });
+  assert.match(html, /UK \+ DE account \(GBP\): 1 row</);
+  assert.match(html, /US account \(USD\): 0 rows/);
+  assert.equal((await fetch(`${base}/sellerboard.csv`, { headers: { Cookie: 'actor=Ashar' } })).status, 400); // which account?
+  assert.equal((await (await fetch(`${base}/sellerboard.csv?account=us`, { headers: { Cookie: 'actor=Ashar' } })).text()).trim().split('\n').length, 1);
+  const csv = await fetch(`${base}/sellerboard.csv?account=uk-de`, { headers: { Cookie: 'actor=Ashar' } });
   assert.match(csv.headers.get('content-disposition'), /attachment/);
   const text = await csv.text();
   assert.match(text, /^ASIN,SKU,CostPeriodStartDate,Cost,Marketplace,BatchQuantity\r\n/);
@@ -67,15 +70,16 @@ test('the Sellerboard page lists the rows, offers the CSV, and writes the sheet'
   assert.equal(r.status, 303);
   assert.equal(written.at(-1).length, 2);
   assert.match(await page('/sellerboard'), /last written/);
+  assert.match(await page('/sellerboard'), /US account[\s\S]*Google Sheet not set up/);
 });
 
 test('ticking “typed into Sellerboard by hand” takes a shipment out of the feed', async () => {
   await post('/shipments/FBANEW1', { version: versionOf(loadLedger(db).shipments.find((s) => s.id === 'FBANEW1')), marketplace: 'UK', status: 'CLOSED', createdAt: '2026-01-10', firstReceivedAt: '2026-01-12', sellerboardManual: '1', item_product: 'A-UK', item_po: 'PO-1', item_shipped: '100', item_received: '100' });
-  assert.match(await page('/sellerboard'), /0 rows for Sellerboard/);
+  assert.match(await page('/sellerboard'), /UK \+ DE account \(GBP\): 0 rows/);
 });
 
 test('the test download can include batches typed in by hand, and narrow to one shipment', async () => {
-  const csv = async (q) => (await fetch(`${base}/sellerboard.csv${q}`, { headers: { Cookie: 'actor=Ashar' } })).text();
+  const csv = async (q) => (await fetch(`${base}/sellerboard.csv?account=uk-de${q.replace('?', '&')}`, { headers: { Cookie: 'actor=Ashar' } })).text();
   assert.doesNotMatch(await csv(''), /FBANEW1/); // typed by hand: left out of the normal file
   assert.match(await csv('?all=1'), /,SKU-A,12\/01\/2026,1\.2000,Amazon\.co\.uk,100/);
   assert.match(await csv('?all=1&shipment=FBANEW1'), /SKU-A/);

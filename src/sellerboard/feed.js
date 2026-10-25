@@ -3,7 +3,8 @@
  * Sellerboard's automatic COGS import (Settings → Automation) from a Google
  * Sheet or a CSV link. FIFO, so each shipment's stock sells at its own cost.
  *
- * GBP for the UK and DE (Sellerboard wants GBP for DE too), USD for the US.
+ * Two Sellerboard accounts, two files: the UK and DE in one, costed in GBP
+ * (Sellerboard wants GBP for DE too), and the US in the other, in USD.
  * A batch only goes in once Amazon starts receiving it, dated that day: that's
  * when the stock becomes sellable and the inventory level starts to rise.
  *
@@ -24,6 +25,12 @@ export const COLUMNS = [
 ];
 export const PAGE_COLUMNS = [...COLUMNS, { key: 'currency', header: 'Currency' }, { key: 'shipment', header: 'Shipment' }, { key: 'status', header: 'Status' }];
 
+export const ACCOUNTS = {
+  'uk-de': { label: 'UK + DE', currency: 'GBP', marketplaces: ['UK', 'DE'] },
+  us: { label: 'US', currency: 'USD', marketplaces: ['US'] },
+};
+export const accountOf = (marketplace) => Object.keys(ACCOUNTS).find((a) => ACCOUNTS[a].marketplaces.includes(marketplace));
+
 const dayMonthYear = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 
 const MARKETPLACE_NAMES = { UK: 'Amazon.co.uk', DE: 'Amazon.de', US: 'Amazon.com' };
@@ -31,9 +38,9 @@ const STATUS_WORDS = { final: 'final', count_pending: 'awaiting Amazon count', e
 
 /**
  * Splits batches into what Sellerboard gets and what's held back, with the
- * reason for each one held.
+ * reason for each one held. `account` narrows it to one Sellerboard account.
  */
-export function buildFeed(ledger, result, { includeManual = false, shipment = null } = {}) {
+export function buildFeed(ledger, result, { includeManual = false, shipment = null, account = null } = {}) {
   const shipments = new Map(ledger.shipments.map((s) => [s.id, s]));
   const products = new Map(ledger.products.map((p) => [p.id, p]));
   const orders = new Map(ledger.orders.map((o) => [o.po, o]));
@@ -42,6 +49,7 @@ export function buildFeed(ledger, result, { includeManual = false, shipment = nu
 
   for (const b of result.batches) {
     if (shipment && b.shipment !== shipment) continue;
+    if (account && accountOf(b.marketplace) !== account) continue;
     const s = shipments.get(b.shipment);
     const p = products.get(b.product);
     const hold = (reason) => held.push({ shipment: b.shipment, product: b.product, code: b.code, marketplace: b.marketplace, reason });
@@ -82,6 +90,7 @@ export function buildFeed(ledger, result, { includeManual = false, shipment = nu
       cost: fmt4(b.landingCost),
       currency: b.currency,
       shipment: b.shipment,
+      account: accountOf(b.marketplace),
       status: STATUS_WORDS[b.status] || b.status,
       product: b.product,
     });

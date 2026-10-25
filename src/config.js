@@ -67,10 +67,10 @@ export const config = {
     refreshTokens: { EU: process.env.SPAPI_REFRESH_TOKEN_EU, NA: process.env.SPAPI_REFRESH_TOKEN_NA },
   },
 
-  /* --- Sellerboard cost feed: a Google Sheet Sellerboard reads daily. Off until filled in. --- */
+  /* --- Sellerboard cost feed: a Google Sheet per Sellerboard account, read daily. Off until filled in. --- */
   sellerboard: {
     keyFile: process.env.GOOGLE_SERVICE_ACCOUNT_FILE,
-    sheetId: process.env.SELLERBOARD_SHEET_ID,
+    sheetIds: { 'uk-de': process.env.SELLERBOARD_SHEET_ID_UK_DE, us: process.env.SELLERBOARD_SHEET_ID_US },
     tab: process.env.SELLERBOARD_SHEET_TAB || 'COGS',
   },
 
