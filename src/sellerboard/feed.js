@@ -1,8 +1,8 @@
 /**
- * The Sellerboard cost feed: one row per product per shipment, read daily by
- * Sellerboard's automatic COGS import from a Google Sheet, or uploaded by hand
- * (Products → Import, accounting method by batch). FIFO, so each shipment's
- * stock sells at its own cost.
+ * The Sellerboard cost feed: one row per product per shipment. Sellerboard has
+ * no automatic import, so these are typed in by hand from the to-do list
+ * (tasks.js), or uploaded as a file (Products → Import, accounting method by
+ * batch). FIFO, so each shipment's stock sells at its own cost.
  *
  * Two Sellerboard accounts, two files: the UK and DE in one, costed in GBP
  * (Sellerboard wants GBP for DE too), and the US in the other, in USD.
@@ -58,7 +58,8 @@ function sellerboardRow(rows, marketplace, product) {
 /**
  * Splits batches into what Sellerboard gets and what's held back, with the
  * reason for each one held. `account` narrows it to one Sellerboard account;
- * `catalog` is Sellerboard's product list per account (loadCatalog).
+ * `catalog` is Sellerboard's product list per account (loadCatalog), needed for
+ * the import file; null when the rows are only to be typed in by hand.
  */
 export function buildFeed(ledger, result, { includeManual = false, shipment = null, account = null, catalog = {} } = {}) {
   const shipments = new Map(ledger.shipments.map((s) => [s.id, s]));
@@ -102,6 +103,25 @@ export function buildFeed(ledger, result, { includeManual = false, shipment = nu
       continue;
     }
     const marketplace = MARKETPLACE_NAMES[b.marketplace];
+    const cost = Number(D(b.landingCost).toFixed(2));
+    const common = {
+      marketplace,
+      date: s.firstReceivedAt,
+      startDate: dayMonthYear(s.firstReceivedAt),
+      quantity: b.units.toString(),
+      cost: cost.toFixed(2),
+      exactCost: fmt4(b.landingCost),
+      currency: b.currency,
+      shipment: b.shipment,
+      closed: s.status === 'CLOSED',
+      account: acct,
+      status: STATUS_WORDS[b.status] || b.status,
+      product: b.product,
+    };
+    if (catalog === null) {
+      rows.push({ ...common, sku: p.sku || p.asin, asin: p.asin || '', values: null });
+      continue;
+    }
     if (!catalog[acct]) {
       hold(`Sellerboard’s product list for the ${ACCOUNTS[acct].label} account isn’t uploaded yet (Sellerboard page).`);
       continue;
@@ -111,7 +131,6 @@ export function buildFeed(ledger, result, { includeManual = false, shipment = nu
       hold(`${p.sku || p.asin} on ${marketplace} isn’t in Sellerboard’s product list. Check the SKU, or upload a fresh export from Sellerboard.`);
       continue;
     }
-    const cost = Number(D(b.landingCost).toFixed(2));
     const values = HEADERS.map((h) => base[h] ?? null);
     const set = (h, v) => (values[HEADERS.indexOf(h)] = v);
     set('ASIN', base.ASIN || p.asin || null);
@@ -119,22 +138,7 @@ export function buildFeed(ledger, result, { includeManual = false, shipment = nu
     set('Cost', cost);
     set('Marketplace', marketplace);
     set('BatchQuantity', Number(b.units.toString()));
-    rows.push({
-      sku: base.SKU,
-      asin: values[0] || '',
-      marketplace,
-      date: s.firstReceivedAt,
-      startDate: dayMonthYear(s.firstReceivedAt),
-      quantity: b.units.toString(),
-      cost: cost.toFixed(2),
-      exactCost: fmt4(b.landingCost),
-      currency: b.currency,
-      shipment: b.shipment,
-      account: acct,
-      status: STATUS_WORDS[b.status] || b.status,
-      product: b.product,
-      values,
-    });
+    rows.push({ ...common, sku: base.SKU, asin: values[0] || '', values });
   }
   rows.sort((a, b) => a.marketplace.localeCompare(b.marketplace) || (a.sku || a.asin).localeCompare(b.sku || b.asin) || a.date.localeCompare(b.date));
   return { rows, held };

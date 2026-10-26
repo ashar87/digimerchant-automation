@@ -14,6 +14,7 @@ import { D, sum } from '../landing/money.js';
 import { enqueue } from '../notify/outbox.js';
 import { shipmentClosedCard, linkRequestCard, shortfallCard } from '../notify/cards.js';
 import { queueCostChanges } from '../notify/costs.js';
+import { refreshSellerboardTasks } from '../sellerboard/tasks.js';
 import { MARKETPLACES } from './spapi.js';
 import { marketplaceForWarehouse } from './warehouses.js';
 
@@ -136,6 +137,7 @@ export async function syncAmazon({ db, client, now = new Date(), actor = 'amazon
   // Shipments that just closed already explain their cost change on the closed card.
   const explained = new Set(events.filter((e) => e.type === 'closed').map((e) => e.shipment));
   report.cards += queueCostChanges(db, after, { skipShipments: explained, reason: 'After the Amazon sync.' });
+  report.cards += refreshSellerboardTasks(db, { result: after, now });
 
   if (!only) db.prepare("INSERT INTO sync_runs (kind, at, ok, summary) VALUES ('amazon', ?, ?, ?)").run(now.toISOString(), report.errors.length ? 0 : 1, JSON.stringify(report));
   return report;

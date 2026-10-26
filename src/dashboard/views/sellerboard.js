@@ -2,6 +2,8 @@ import { html } from '../html.js';
 import { ACCOUNTS, buildFeed, toXlsx, PAGE_COLUMNS } from '../../sellerboard/feed.js';
 import { readSellerboardExport, saveCatalog, loadCatalog } from '../../sellerboard/catalog.js';
 import { publishFeed } from '../../sellerboard/publish.js';
+import { sellerboardTasks, sellerboardTask, markSellerboardDone } from '../../sellerboard/tasks.js';
+import { fmtRmb, D } from '../../landing/money.js';
 import { HttpError } from '../errors.js';
 import { enc } from './common.js';
 import { lastSync } from './amazon.js';
@@ -11,6 +13,40 @@ function sheetStatus(ctx, account) {
   const last = lastSync(ctx.db, `sellerboard:${account}`);
   if (!last) return 'Google Sheet not written yet.';
   return html`Google Sheet last written ${last.at.slice(0, 16).replace('T', ' ')} ${last.ok ? `✓ (${last.summary.rows} rows)` : html`<span class="badge bad">failed: ${(last.summary.errors || []).join('; ')}</span>`}`;
+}
+
+const money = (account, cost) => `${ACCOUNTS[account].currency === 'USD' ? '$' : '£'}${cost}`;
+const same = (a, b) => a && b && a.date === b.date && a.units === b.units && a.cost === b.cost;
+
+/** What Sellerboard has that differs from the dashboard: "£3.57, 2,000 units". */
+function sellerboardHas(t) {
+  const was = [];
+  if (t.entered.date !== t.target.date) was.push(`date ${t.entered.date}`);
+  if (t.entered.cost !== t.target.cost) was.push(money(t.account, t.entered.cost));
+  if (t.entered.units !== t.target.units) was.push(`${fmtRmb(D(t.entered.units))} units`);
+  return was.join(', ');
+}
+
+/** The figures to type in, and for an update what Sellerboard has now. */
+export function sellerboardDetail(t) {
+  const now = `${ACCOUNTS[t.account].label} account · Batch date ${t.target.date} · ${fmtRmb(D(t.target.units))} units · ${money(t.account, t.target.cost)}`;
+  return t.state === 'update' && t.entered ? `${now} (Sellerboard has ${sellerboardHas(t)})` : now;
+}
+
+export function doneForm(t, back) {
+  return html`<form class="inline" method="post" action="/sellerboard/done"><input type="hidden" name="shipment" value="${t.shipment}"><input type="hidden" name="product" value="${t.product}"><input type="hidden" name="back" value="${back}"><button title="It’s in Sellerboard with these figures">Done</button></form>`;
+}
+
+function taskTable(tasks, { done = false } = {}) {
+  return html`<div class="card scroll"><table><thead><tr><th>SKU</th><th>Marketplace</th><th>Shipment</th><th>Batch date</th><th class="n">Units</th><th class="n">Cost</th><th>${done ? 'Added' : ''}</th></tr></thead><tbody>
+${tasks.map((t) => {
+  const behind = done && !same(t.entered, t.target);
+  return html`<tr><td>${t.sku}</td><td>${t.marketplace}</td><td><a href="/shipments/${enc(t.shipment)}">${t.shipment}</a></td><td>${t.target.date}</td><td class="n">${fmtRmb(D(t.target.units))}</td><td class="n">${money(t.account, t.target.cost)}</td>
+<td class="small">${done
+    ? html`${t.done_at ? `${t.done_at.slice(0, 10)} by ${t.done_by}` : ''}${behind ? html`<div class="muted">Sellerboard has ${sellerboardHas(t)}. You’ll be asked to change it once Amazon closes the shipment.</div>` : ''}`
+    : html`${t.state === 'update' && t.entered ? html`<span class="muted">Sellerboard has ${sellerboardHas(t)}</span> ` : ''}${doneForm(t, '/sellerboard')}`}</td></tr>`;
+})}
+</tbody></table></div>`;
 }
 
 function catalogForm(account, c) {
@@ -28,23 +64,38 @@ export function sellerboardPage(ctx) {
   const feed = buildFeed(ledger, result, { catalog });
   const all = buildFeed(ledger, result, { includeManual: true, catalog });
   const anySheet = Object.keys(ctx.sheets || {}).length > 0;
+  const tasks = sellerboardTasks(ctx.db);
+  const toAdd = tasks.filter((t) => t.state === 'add');
+  const toUpdate = tasks.filter((t) => t.state === 'update');
+  const done = tasks.filter((t) => t.state === 'done');
   const body = html`
 <h1>Sellerboard</h1>
-<p class="sub">One row per product per shipment, for each Sellerboard account: UK + DE in GBP, the US in USD. A shipment is added the day Amazon starts receiving it, and dated that day.</p>
-${anySheet ? html`<form method="post" action="/sellerboard/publish"><button class="ghost">Write the Google Sheets now</button></form>` : ''}
+<p class="sub">Sellerboard can’t import costs by itself, so batches are typed in by hand: in Sellerboard, the product’s cost of goods, by batch. When Amazon starts receiving a shipment you get a WhatsApp message with the figures; once it’s in, reply Y or press Done here. If the cost, units or date change by the time Amazon closes the shipment, you’re asked to update it.</p>
 
+<h2>To add (${toAdd.length})</h2>
+${toAdd.length ? taskTable(toAdd) : html`<p class="muted">Nothing to add.</p>`}
+<h2>To update (${toUpdate.length})</h2>
+${toUpdate.length ? taskTable(toUpdate) : html`<p class="muted">Nothing to update.</p>`}
+<details class="card"${done.length ? '' : ' open'}><summary>In Sellerboard (${done.length})</summary>
+${done.length ? taskTable(done, { done: true }) : html`<p class="muted small">None yet.</p>`}
+</details>
+
+<details class="card"><summary>Import file instead of typing (optional)</summary>
+<p class="small">One row per product per shipment for each Sellerboard account: UK + DE in GBP, the US in USD. Useful when several batches land at once. Importing doesn’t tick them off here: press Done for each.</p>
+${anySheet ? html`<form method="post" action="/sellerboard/publish"><button class="ghost">Write the Google Sheets now</button></form>` : ''}
 ${Object.entries(ACCOUNTS).map(([account, a]) => {
   const rows = feed.rows.filter((r) => r.account === account);
-  return html`<h2>${a.label} account (${a.currency}): ${rows.length} row${rows.length === 1 ? '' : 's'}</h2>
-<div class="card">${catalogForm(account, catalog[account])}</div>
+  return html`<h3>${a.label} account (${a.currency}): ${rows.length} row${rows.length === 1 ? '' : 's'}</h3>
+<div>${catalogForm(account, catalog[account])}</div>
 <p><a class="button" href="/sellerboard.xlsx?account=${account}">Download ${a.label} import file</a> ${sheetStatus(ctx, account)}</p>
 ${rows.length
-  ? html`<div class="card scroll"><table><thead><tr>${PAGE_COLUMNS.map((c) => html`<th class="${['quantity', 'cost'].includes(c.key) ? 'n' : ''}">${c.header}</th>`)}</tr></thead><tbody>
+  ? html`<div class="scroll"><table><thead><tr>${PAGE_COLUMNS.map((c) => html`<th class="${['quantity', 'cost'].includes(c.key) ? 'n' : ''}">${c.header}</th>`)}</tr></thead><tbody>
 ${rows.map((r) => html`<tr>${PAGE_COLUMNS.map((c) => html`<td class="${['quantity', 'cost'].includes(c.key) ? 'n' : ''}">${r[c.key]}</td>`)}</tr>`)}
 </tbody></table></div>`
   : html`<p class="muted">Nothing yet.</p>`}`;
 })}
 <p class="muted small">In Sellerboard: <b>Products → Import</b>, accounting method <b>by batch</b>, batch date = CostPeriodStartDate. An import adds each batch beside the ones already there; importing the same batch again doesn’t add it twice. Costs go in to 2 decimals (Sellerboard won’t take more); the dashboard keeps 4. Every column apart from the batch date, cost, marketplace and units is copied from Sellerboard’s own product list, so its VAT, EAN and other settings are left as they are. The files hold your unit costs; keep them private.</p>
+</details>
 
 <details class="card"><summary>Comparing with what's in Sellerboard (${all.rows.length} batch rows, including those typed in by hand)</summary>
 ${Object.entries(ACCOUNTS).map(([account, a]) => {
@@ -92,6 +143,18 @@ export async function uploadSellerboardCatalog(ctx) {
   if (read.account && read.account !== account) throw new HttpError(400, `That export is from the ${ACCOUNTS[read.account].label} account, not ${ACCOUNTS[account].label}.`);
   saveCatalog(ctx.db, { account, rows: read.rows, filename: file.filename, actor: ctx.actor });
   return { redirect: `/sellerboard?ok=${enc(`${ACCOUNTS[account].label} product list updated: ${read.rows.length} rows.`)}` };
+}
+
+export function sellerboardDone(ctx) {
+  const shipment = String(ctx.form.get('shipment') || '');
+  const product = String(ctx.form.get('product') || '');
+  const asked = String(ctx.form.get('back') || '');
+  const back = asked.startsWith('/') && !asked.startsWith('//') ? asked : '/sellerboard';
+  const t = sellerboardTask(ctx.db, shipment, product);
+  if (!t) throw new HttpError(400, `${shipment} isn’t on the Sellerboard list.`);
+  if (t.state === 'done') return { redirect: `${back}${back.includes('?') ? '&' : '?'}ok=${enc(`${t.sku} ${t.shipment} was already marked as in Sellerboard.`)}` };
+  markSellerboardDone(ctx.db, { shipment, product, actor: ctx.actor });
+  return { redirect: `${back}${back.includes('?') ? '&' : '?'}ok=${enc(`${t.sku} ${t.shipment}: marked as in Sellerboard (${money(t.account, t.target.cost)}, ${fmtRmb(D(t.target.units))} units).`)}` };
 }
 
 export async function publishSellerboard(ctx) {

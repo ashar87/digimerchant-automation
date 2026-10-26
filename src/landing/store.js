@@ -194,6 +194,26 @@ CREATE TABLE IF NOT EXISTS sellerboard_catalogs (
   rows        TEXT NOT NULL               -- JSON: Sellerboard's product export, a row per SKU per marketplace
 );
 
+CREATE TABLE IF NOT EXISTS sellerboard_batches (
+  shipment      TEXT NOT NULL,
+  product       TEXT NOT NULL,
+  account       TEXT NOT NULL,            -- uk-de | us
+  marketplace   TEXT NOT NULL,            -- Amazon.co.uk, Amazon.de, Amazon.com
+  sku           TEXT NOT NULL,
+  batch_date    TEXT NOT NULL,            -- dd/mm/yyyy, as Sellerboard shows it
+  units         INTEGER NOT NULL,
+  cost          TEXT NOT NULL,            -- what Sellerboard should have, 2 decimals
+  state         TEXT NOT NULL CHECK (state IN ('add','update','done')),
+  entered_date  TEXT,                     -- what Ashar entered, when he said it was done
+  entered_units INTEGER,
+  entered_cost  TEXT,
+  done_at       TEXT,
+  done_by       TEXT,
+  card_id       INTEGER,                  -- the WhatsApp card still waiting for a Y
+  updated_at    TEXT NOT NULL,
+  PRIMARY KEY (shipment, product)
+);
+
 CREATE TABLE IF NOT EXISTS invoice_drafts (
   id         INTEGER PRIMARY KEY,
   created_at TEXT NOT NULL,

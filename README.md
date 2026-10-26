@@ -411,6 +411,7 @@ npm run landing:import -- private/import/open-orders.json --dry-run
 npm run landing:check                              # engine vs the sourcing sheet
 npm run amazon:sync -- --dry-run                   # shipment status and counts from Amazon
 npm run sellerboard:feed                           # what Sellerboard gets, and what's held back
+npm run sellerboard:feed -- --entered FBA… SKU 3.57  # a batch already in Sellerboard: on the list as done
 npm run landing:backup                             # encrypted snapshot of data/landing.db
 npm run wise:import                                # recent Wise transfers, to record as payments
 npm run qb:rates                                   # QuickBooks exchange rates for payments that need one
@@ -428,12 +429,15 @@ npm test
 - `src/notify/` holds the queue of WhatsApp cards (shipment closed, link request, shortfall,
   cost change over 2%). The listener owns the WhatsApp session and will send from this queue;
   until that's wired in, the cards wait on the dashboard's Messages page.
-- `src/sellerboard/` builds the cost feed (one row per product per shipment, FIFO; one file per
-  Sellerboard account, UK + DE in GBP and the US in USD) as Sellerboard's own 17-column import
-  template, copying every non-batch column from Sellerboard's uploaded product export, and
-  writes it to the Google Sheet each account reads, or to .xlsx.
-  Unchecked imports, deposit-only orders and shipments typed into Sellerboard by hand are held
-  back, each with its reason.
+- `src/sellerboard/` keeps Sellerboard's costs in step. Sellerboard has no automatic import, so
+  batches are typed in by hand: `tasks.js` keeps the to-do list (add when Amazon starts
+  receiving a shipment; update when it closes and the 2-decimal cost, units or date no longer
+  match what was typed), with a WhatsApp card for each that "Y #id" or Done on the dashboard
+  ticks off. `feed.js` builds the same batches (one row per product per shipment, FIFO; UK + DE
+  in GBP, the US in USD) as Sellerboard's own 17-column import file, for adding several at once,
+  copying every non-batch column from Sellerboard's uploaded product export.
+  Unchecked imports, deposit-only orders and shipments typed into Sellerboard by hand before
+  the list existed are held back, each with its reason.
 - `src/invoices/` reads supplier invoices: Excel exactly, PDFs and photos with Gemini (blanks
   stay blank, never guessed), then checks the arithmetic in code. Uploads and invoices
   forwarded to the WhatsApp self-chat (`handleForwardedInvoice`, not wired into the listener

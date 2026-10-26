@@ -99,6 +99,22 @@ test('the Sellerboard page waits for Sellerboard’s product list, then offers e
   assert.match(await page('/sellerboard'), /US account[\s\S]*Google Sheet not set up/);
 });
 
+test('a batch Sellerboard should get is in the Inbox and on WhatsApp until it is marked done', async () => {
+  // First carded at the estimated delivery cost; the bill's cost replaced it before it was added.
+  const [first, card] = unsent(db).filter((c) => c.kind === 'sellerboard');
+  assert.match(first.text, /£1\.50/);
+  assert.equal(first.reply, 'superseded');
+  assert.match(card.text, /📥 Add to Sellerboard \(UK \+ DE account\)\nSKU-A · Amazon\.co\.uk · FBANEW1\nBatch date 12\/01\/2026 · 100 units · £1\.20/);
+  assert.match(await page('/'), /Add to Sellerboard: SKU-A Amazon\.co\.uk · FBANEW1/);
+  assert.match(await page('/sellerboard'), /To add \(1\)/);
+  const r = await post('/sellerboard/done', { shipment: 'FBANEW1', product: 'A-UK', back: '/' });
+  assert.equal(r.status, 303);
+  assert.match(decodeURIComponent(r.headers.get('location')), /marked as in Sellerboard \(£1\.20, 100 units\)/);
+  assert.doesNotMatch(await page('/'), /Add to Sellerboard/);
+  assert.match(await page('/sellerboard'), /In Sellerboard \(1\)/);
+  assert.equal((await post('/sellerboard/done', { shipment: 'FBANOPE', product: 'A-UK' })).status, 400);
+});
+
 test('ticking “typed into Sellerboard by hand” takes a shipment out of the feed', async () => {
   await post('/shipments/FBANEW1', { version: versionOf(loadLedger(db).shipments.find((s) => s.id === 'FBANEW1')), marketplace: 'UK', status: 'CLOSED', createdAt: '2026-01-10', firstReceivedAt: '2026-01-12', sellerboardManual: '1', item_product: 'A-UK', item_po: 'PO-1', item_shipped: '100', item_received: '100' });
   assert.match(await page('/sellerboard'), /UK \+ DE account \(GBP\): 0 rows/);

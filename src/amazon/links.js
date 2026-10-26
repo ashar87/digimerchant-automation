@@ -4,18 +4,25 @@
  */
 import { loadLedger, saveLedger } from '../landing/store.js';
 import { getCard, recordReply } from '../notify/outbox.js';
+import { markSellerboardDone } from '../sellerboard/tasks.js';
 
 const PO_IN_NAME = /\bPO-\d{1,5}\b/i;
 
 export async function applyCardReply(db, cardId, reply, { actor, client = null } = {}) {
   const card = getCard(db, cardId);
   if (!card) throw new Error(`No card ${cardId}`);
+  if (['superseded', 'no longer needed'].includes(card.reply)) return { ok: false, message: `That card is out of date (${card.reply}): see the Sellerboard page.` };
   if (card.reply) return { ok: false, message: `Already answered (${card.reply}) by ${card.replied_by}.` };
   const yes = /^y(es)?$/i.test(String(reply).trim());
   recordReply(db, cardId, yes ? 'Y' : 'N', actor);
+  const p = card.payload;
+  if (p?.action === 'sellerboard') {
+    if (!yes) return { ok: true, message: 'Still on the Sellerboard list.' };
+    markSellerboardDone(db, { shipment: p.shipment, product: p.product, values: { date: p.date, units: p.units, cost: p.cost }, actor, cardId });
+    return { ok: true, message: `Marked as in Sellerboard: ${p.shipment}, ${p.cost} for ${p.units} units from ${p.date}.` };
+  }
   if (!yes) return { ok: true, message: 'Left unlinked. Link it on the Shipments page.' };
 
-  const p = card.payload;
   if (p?.action !== 'link') return { ok: true, message: 'Noted.' };
 
   const ledger = loadLedger(db);

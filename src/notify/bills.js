@@ -8,6 +8,7 @@ import { computeLandingCosts } from '../landing/engine.js';
 import { fmt4 } from '../landing/money.js';
 import { enqueue } from './outbox.js';
 import { queueCostChanges } from './costs.js';
+import { refreshSellerboardTasks } from '../sellerboard/tasks.js';
 
 export function queueBillCards(db, billIds, before) {
   const ledger = loadLedger(db);
@@ -35,4 +36,5 @@ export function queueBillCards(db, billIds, before) {
     }
   }
   queueCostChanges(db, after, { skipShipments: touched, reason: 'After a courier bill or payment was entered.' });
+  refreshSellerboardTasks(db, { ledger, result: after });
 }

@@ -5,7 +5,7 @@ import { shipmentsPage, shipmentForm, saveShipment, deleteShipment, ignoreShipme
 import { costsPage, batchPage } from './views/costs.js';
 import { productsPage, productPage, saveProduct, deleteProduct } from './views/products.js';
 import { billsPage, billPage, saveBill, deleteBill, uploadBill, billDraftPage, billDraftFile, saveBillDraft, discardBillDraft } from './views/bills.js';
-import { sellerboardPage, sellerboardXlsx, publishSellerboard, uploadSellerboardCatalog } from './views/sellerboard.js';
+import { sellerboardPage, sellerboardXlsx, publishSellerboard, uploadSellerboardCatalog, sellerboardDone } from './views/sellerboard.js';
 import { anniePage } from './views/annie.js';
 import { settingsPage, saveSettings, saveSuppliers } from './views/settings.js';
 import { runAmazonSync, replyToCard, messagesPage } from './views/amazon.js';
@@ -92,6 +92,7 @@ export const routes = [
   r('GET', '/sellerboard\\.xlsx', sellerboardXlsx),
   r('POST', '/sellerboard/catalog', uploadSellerboardCatalog),
   r('POST', '/sellerboard/publish', publishSellerboard),
+  r('POST', '/sellerboard/done', sellerboardDone),
 
   r('GET', '/costs', costsPage),
   r('GET', '/costs/:seg/:seg', batchPage),

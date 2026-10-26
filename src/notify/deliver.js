@@ -11,6 +11,7 @@ import { unsent, markSent } from './outbox.js';
 /** The card with its answer line: "Reply Y #12 or N #12", replacing the generic one. */
 export function withAnswerLine(card) {
   const lines = card.text.split('\n').filter((l) => !/^reply y\b/i.test(l.trim()));
+  if (card.payload?.action === 'sellerboard') return [...lines, `Reply *Y #${card.id}* once it’s in Sellerboard, or tick it on the dashboard.`].join('\n');
   return [...lines, `Reply *Y #${card.id}* or *N #${card.id}*, or answer this message with Y or N.`].join('\n');
 }
 
@@ -19,7 +20,10 @@ export function withAnswerLine(card) {
  * nothing was sent (dry run): the cards then stay queued. Returns the number sent.
  */
 export async function deliverOutbox(db, send, { limit = 20 } = {}) {
-  const cards = unsent(db, limit);
+  // Answered on the dashboard before the listener got to it: nothing left to say.
+  const all = unsent(db, limit);
+  for (const c of all.filter((x) => x.reply)) markSent(db, c.id, null);
+  const cards = all.filter((x) => !x.reply);
   if (!cards.length) return 0;
   let sent = 0;
 

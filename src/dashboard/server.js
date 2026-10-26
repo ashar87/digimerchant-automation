@@ -16,6 +16,7 @@ import { openLandingDb, loadLedger } from '../landing/store.js';
 import { seedTaskRefs, whatsappRefCounter } from '../tasks/board.js';
 import { createSpApi, spApiConfigured } from '../amazon/spapi.js';
 import { sheetWriters } from '../sellerboard/publish.js';
+import { refreshSellerboardTasks } from '../sellerboard/tasks.js';
 import { geminiInvoiceReader } from '../invoices/model.js';
 import { geminiBillReader } from '../bills/read.js';
 import { createWise, wiseConfigured } from '../wise/client.js';
@@ -121,6 +122,16 @@ async function handle({ db, spapi, sheets, invoiceReader, billReader, wise, qbo,
   };
 
   const out = await route.handler(ctx);
+  // Any save can change what Sellerboard should hold (a receive date, a cost), so the
+  // to-do list is brought up to date after each one. It never fails the save.
+  if (req.method === 'POST') {
+    try {
+      ctx.fresh();
+      refreshSellerboardTasks(db, ctx.data);
+    } catch (err) {
+      console.error('[dashboard] Sellerboard list:', err);
+    }
+  }
   if (out?.redirect) return redirect(res, out.redirect);
   if (out?.text !== undefined) return send(res, 200, out.text, out.type || 'text/plain; charset=utf-8', out.headers);
   if (Buffer.isBuffer(out?.body)) return send(res, 200, out.body, out.type, out.headers);
