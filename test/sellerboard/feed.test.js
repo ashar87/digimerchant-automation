@@ -7,10 +7,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { computeLandingCosts } from '../../src/landing/engine.js';
 import ExcelJS from 'exceljs';
-import { buildFeed, toXlsx, feedValues, HEADERS } from '../../src/sellerboard/feed.js';
+import { buildFeed, toXlsx, HEADERS } from '../../src/sellerboard/feed.js';
 import { readSellerboardExport, saveCatalog, loadCatalog } from '../../src/sellerboard/catalog.js';
-import { createSheetsWriter } from '../../src/google/sheets.js';
-import { publishFeed } from '../../src/sellerboard/publish.js';
 import { openLandingDb, saveLedger } from '../../src/landing/store.js';
 import { encryptFile, decryptFile } from '../../src/landing/backup.js';
 
@@ -90,27 +88,6 @@ test('each Sellerboard account gets only its own marketplaces: UK and DE in one,
   assert.ok(buildFeed(l, result, { account: 'us', catalog }).held.every((h) => h.marketplace === 'US'));
 });
 
-test('each account’s sheet is written on its own, and one failing doesn’t stop the other', async () => {
-  const db = openLandingDb(':memory:');
-  const l = ledger();
-  l.shipments[1].firstReceivedAt = '2026-02-20';
-  saveLedger(db, l, { actor: 'test' });
-  for (const [account, rows] of Object.entries(sbRows)) saveCatalog(db, { account, rows, actor: 'test' });
-  const got = {};
-  const writers = {
-    'uk-de': { replaceTab: async (values) => ((got['uk-de'] = values), { rows: values.length - 1 }) },
-    us: { replaceTab: async () => { throw new Error('no access'); } },
-  };
-  const r = await publishFeed({ db, writers });
-  assert.equal(r.ok, false);
-  assert.deepEqual(r.results, [{ account: 'uk-de', ok: true, rows: 1 }, { account: 'us', ok: false, error: 'no access' }]);
-  assert.deepEqual(got['uk-de'][0], HEADERS);
-  assert.equal(got['uk-de'][1][HEADERS.indexOf('Marketplace')], 'Amazon.co.uk');
-  assert.equal(got['uk-de'][1][HEADERS.indexOf('Cost')], 1.11); // a number, so the sheet doesn't hold it as text
-  const runs = db.prepare('SELECT kind, ok FROM sync_runs ORDER BY id').all().map((x) => `${x.kind}:${x.ok}`);
-  assert.deepEqual(runs, ['sellerboard:uk-de:1', 'sellerboard:us:0']);
-});
-
 test('a shipment marked received or closed without a receiving date is held, with what to do', () => {
   const l = ledger();
   l.shipments[0].firstReceivedAt = undefined;
@@ -151,29 +128,6 @@ test('an uploaded product list replaces the account’s last one', () => {
   assert.equal(c.us.count, 2);
   assert.ok(c.us.rows.get('Amazon.com|SKU-2'));
   assert.equal(c['uk-de'], undefined);
-});
-
-test('the Sheets writer logs in with a signed service-account token, clears the tab, then writes it', async () => {
-  const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
-  const calls = [];
-  const fetch = async (url, init) => {
-    calls.push({ url: String(url), init });
-    if (String(url).startsWith('https://oauth2.googleapis.com')) return new Response(JSON.stringify({ access_token: 'g-tok', expires_in: 3600 }));
-    return new Response('{}');
-  };
-  const writer = createSheetsWriter({ key: { client_email: 'feed@test.iam.gserviceaccount.com', private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }) }, sheetId: 'SHEET1', tab: 'COGS', fetch });
-  const l = ledger();
-  const out = await writer.replaceTab(feedValues(buildFeed(l, computeLandingCosts(l), { catalog }).rows));
-  assert.equal(out.rows, 1);
-
-  const assertion = new URLSearchParams(calls[0].init.body).get('assertion');
-  const [h, p, sig] = assertion.split('.');
-  assert.ok(crypto.createVerify('RSA-SHA256').update(`${h}.${p}`).verify(publicKey, Buffer.from(sig, 'base64url')));
-  assert.equal(JSON.parse(Buffer.from(p, 'base64url')).scope, 'https://www.googleapis.com/auth/spreadsheets');
-  assert.match(calls[1].url, /SHEET1\/values\/'COGS':clear$/);
-  assert.match(calls[2].url, /values\/'COGS'!A1\?valueInputOption=RAW$/);
-  assert.equal(calls[2].init.headers.Authorization, 'Bearer g-tok');
-  assert.equal(JSON.parse(calls[2].init.body).values[0][0], 'ASIN'); // Sellerboard's own column order
 });
 
 test('backups decrypt only with the right passphrase', () => {

@@ -144,10 +144,6 @@ export function buildFeed(ledger, result, { includeManual = false, shipment = nu
   return { rows, held };
 }
 
-export function feedValues(rows) {
-  return [HEADERS, ...rows.map((r) => r.values.map((v) => v ?? ''))];
-}
-
 /** The rows as Sellerboard's import template (.xlsx), costs shown to 2 decimals as in its own files. */
 export async function toXlsx(rows) {
   const wb = new ExcelJS.Workbook();

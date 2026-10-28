@@ -507,22 +507,15 @@ Each one asks for the value at a hidden prompt and writes it into
 
 ```bash
 cd /opt/digimerchant/deploy
-sudo cp digimerchant-dashboard.service digimerchant-amazon-sync.* digimerchant-sellerboard-feed.* digimerchant-landing-backup.* /etc/systemd/system/
+sudo cp digimerchant-dashboard.service digimerchant-amazon-sync.* digimerchant-landing-backup.* /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now digimerchant-dashboard digimerchant-amazon-sync.timer digimerchant-sellerboard-feed.timer digimerchant-landing-backup.timer
+sudo systemctl enable --now digimerchant-dashboard digimerchant-amazon-sync.timer digimerchant-landing-backup.timer
 ```
 
-Each morning: Amazon sync at 06:55, then the Sellerboard sheet at 07:20. Backups at 02:30.
+Each morning: Amazon sync at 06:55. Backups at 02:30.
 
-**Sellerboard.** Create a Google Cloud service account, download its JSON key, and put the
-key on the server (`scp key.json debian@YOUR_SERVER_IP:` then
-`sudo install -o digimerchant -m 600 key.json /opt/digimerchant/data/google-key.json`).
-Make two Google Sheets, one per Sellerboard account (UK + DE, and US), each with a tab called
-`COGS`. Share both with the service account's email as Editor, and set
-`GOOGLE_SERVICE_ACCOUNT_FILE=/opt/digimerchant/data/google-key.json`,
-`SELLERBOARD_SHEET_ID_UK_DE` and `SELLERBOARD_SHEET_ID_US`. In each Sellerboard account:
-automatic COGS import, pointed at its own sheet. Check the column names against Sellerboard's COGS template first; they're set
-in `src/sellerboard/feed.js`.
+**Sellerboard.** Nothing to set up on the server: Sellerboard has no automatic import, so
+batches are typed in by hand from the dashboard's Sellerboard page (a WhatsApp card for each).
 
 **Backups.** Set `BACKUP_PASSPHRASE` with `set-secret.sh`, and keep the passphrase somewhere
 that isn't this server. Snapshots land in `data/backups/` (newest 30 kept). To get them off

@@ -4,7 +4,6 @@
  *
  *   npm run sellerboard:feed                         # show what each Sellerboard account would get, and what's held
  *   npm run sellerboard:feed -- --xlsx us out.xlsx   # one account's import file (uk-de or us), for a manual upload
- *   npm run sellerboard:feed -- --publish            # write each account's Google Sheet (needs GOOGLE_* in .env)
  *   npm run sellerboard:feed -- --entered FBA… SKU 3.57 [units] [dd/mm/yyyy]
  *                                                    # a batch already typed into Sellerboard: on the list as done, no card
  */
@@ -14,7 +13,6 @@ import { openLandingDb, loadLedger } from '../src/landing/store.js';
 import { computeLandingCosts } from '../src/landing/engine.js';
 import { ACCOUNTS, buildFeed, toXlsx } from '../src/sellerboard/feed.js';
 import { loadCatalog } from '../src/sellerboard/catalog.js';
-import { publishFeed, sheetWriters } from '../src/sellerboard/publish.js';
 import { recordEntered, refreshSellerboardTasks } from '../src/sellerboard/tasks.js';
 
 const args = process.argv.slice(2);
@@ -57,14 +55,4 @@ if (xlsxAt >= 0) {
   const out = args[xlsxAt + 2] || `data/sellerboard-cogs-${account}.xlsx`;
   fs.writeFileSync(out, await toXlsx(feed.rows.filter((r) => r.account === account)), { mode: 0o600 });
   console.log(`\nWrote ${out}. It holds your unit costs: keep it private.`);
-}
-if (args.includes('--publish')) {
-  const writers = sheetWriters(config.sellerboard);
-  if (!Object.keys(writers).length) {
-    console.log('\nGoogle Sheets not set up yet: add GOOGLE_SERVICE_ACCOUNT_FILE and SELLERBOARD_SHEET_ID_UK_DE / _US to .env.');
-    process.exit(0);
-  }
-  const r = await publishFeed({ db, writers });
-  for (const x of r.results) console.log(x.ok ? `\n${ACCOUNTS[x.account].label} sheet updated: ${x.rows} row(s).` : `\n✗ ${ACCOUNTS[x.account].label} sheet: ${x.error}`);
-  process.exit(r.ok ? 0 : 1);
 }

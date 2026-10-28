@@ -9,7 +9,6 @@ import ExcelJS from 'exceljs';
 import { HEADERS } from '../../src/sellerboard/feed.js';
 
 let db, server, base;
-const written = [];
 
 before(async () => {
   db = openLandingDb(':memory:');
@@ -23,8 +22,7 @@ before(async () => {
       { id: 'FBANEW1', marketplace: 'UK', status: 'CLOSED', createdAt: '2026-01-10', firstReceivedAt: '2026-01-12', items: [{ product: 'A-UK', po: 'PO-1', shipped: 100, received: 100 }] },
     ],
   }, { actor: 'test' });
-  const sheets = { 'uk-de': { replaceTab: async (values) => (written.push(values), { rows: values.length - 1 }) } };
-  server = createDashboard({ db, sheets });
+  server = createDashboard({ db });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   base = `http://127.0.0.1:${server.address().port}`;
 });
@@ -67,7 +65,7 @@ const xlsxRows = async (q) => {
   return rows;
 };
 
-test('the Sellerboard page waits for Sellerboard’s product list, then offers each account’s import file and writes its sheet', async () => {
+test('the Sellerboard page waits for Sellerboard’s product list, then offers each account’s import file', async () => {
   assert.match(await page('/sellerboard'), /product list for the UK \+ DE account isn’t uploaded/);
 
   // Sellerboard's own export for the UK + DE account, uploaded on the page.
@@ -92,11 +90,6 @@ test('the Sellerboard page waits for Sellerboard’s product list, then offers e
   const rows = await xlsxRows('?account=uk-de');
   assert.deepEqual(rows[0], HEADERS);
   assert.deepEqual([rows[1][0], rows[1][1], rows[1][2], rows[1][4], rows[1][5], rows[1][10], rows[1][13], rows[1][14]], ['B000UK', 'SKU-A', 'Product A', '12/01/2026', 1.2, 20, 'Amazon.co.uk', 100]);
-  const r = await post('/sellerboard/publish', {});
-  assert.equal(r.status, 303);
-  assert.equal(written.at(-1).length, 2);
-  assert.match(await page('/sellerboard'), /last written/);
-  assert.match(await page('/sellerboard'), /US account[\s\S]*Google Sheet not set up/);
 });
 
 test('a batch Sellerboard should get is in the Inbox and on WhatsApp until it is marked done', async () => {

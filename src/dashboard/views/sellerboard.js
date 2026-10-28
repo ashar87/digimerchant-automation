@@ -1,19 +1,10 @@
 import { html } from '../html.js';
 import { ACCOUNTS, buildFeed, toXlsx, PAGE_COLUMNS } from '../../sellerboard/feed.js';
 import { readSellerboardExport, saveCatalog, loadCatalog } from '../../sellerboard/catalog.js';
-import { publishFeed } from '../../sellerboard/publish.js';
 import { sellerboardTasks, sellerboardTask, markSellerboardDone } from '../../sellerboard/tasks.js';
 import { fmtRmb, D } from '../../landing/money.js';
 import { HttpError } from '../errors.js';
 import { enc } from './common.js';
-import { lastSync } from './amazon.js';
-
-function sheetStatus(ctx, account) {
-  if (!ctx.sheets?.[account]) return html`<span class="muted small">Google Sheet not set up: download the file and import it in Sellerboard by hand.</span>`;
-  const last = lastSync(ctx.db, `sellerboard:${account}`);
-  if (!last) return 'Google Sheet not written yet.';
-  return html`Google Sheet last written ${last.at.slice(0, 16).replace('T', ' ')} ${last.ok ? `✓ (${last.summary.rows} rows)` : html`<span class="badge bad">failed: ${(last.summary.errors || []).join('; ')}</span>`}`;
-}
 
 const money = (account, cost) => `${ACCOUNTS[account].currency === 'USD' ? '$' : '£'}${cost}`;
 const same = (a, b) => a && b && a.date === b.date && a.units === b.units && a.cost === b.cost;
@@ -63,7 +54,6 @@ export function sellerboardPage(ctx) {
   const catalog = loadCatalog(ctx.db);
   const feed = buildFeed(ledger, result, { catalog });
   const all = buildFeed(ledger, result, { includeManual: true, catalog });
-  const anySheet = Object.keys(ctx.sheets || {}).length > 0;
   const tasks = sellerboardTasks(ctx.db);
   const toAdd = tasks.filter((t) => t.state === 'add');
   const toUpdate = tasks.filter((t) => t.state === 'update');
@@ -82,12 +72,11 @@ ${done.length ? taskTable(done, { done: true }) : html`<p class="muted small">No
 
 <details class="card"><summary>Import file instead of typing (optional)</summary>
 <p class="small">One row per product per shipment for each Sellerboard account: UK + DE in GBP, the US in USD. Useful when several batches land at once. Importing doesn’t tick them off here: press Done for each.</p>
-${anySheet ? html`<form method="post" action="/sellerboard/publish"><button class="ghost">Write the Google Sheets now</button></form>` : ''}
 ${Object.entries(ACCOUNTS).map(([account, a]) => {
   const rows = feed.rows.filter((r) => r.account === account);
   return html`<h3>${a.label} account (${a.currency}): ${rows.length} row${rows.length === 1 ? '' : 's'}</h3>
 <div>${catalogForm(account, catalog[account])}</div>
-<p><a class="button" href="/sellerboard.xlsx?account=${account}">Download ${a.label} import file</a> ${sheetStatus(ctx, account)}</p>
+<p><a class="button" href="/sellerboard.xlsx?account=${account}">Download ${a.label} import file</a></p>
 ${rows.length
   ? html`<div class="scroll"><table><thead><tr>${PAGE_COLUMNS.map((c) => html`<th class="${['quantity', 'cost'].includes(c.key) ? 'n' : ''}">${c.header}</th>`)}</tr></thead><tbody>
 ${rows.map((r) => html`<tr>${PAGE_COLUMNS.map((c) => html`<td class="${['quantity', 'cost'].includes(c.key) ? 'n' : ''}">${r[c.key]}</td>`)}</tr>`)}
@@ -155,11 +144,4 @@ export function sellerboardDone(ctx) {
   if (t.state === 'done') return { redirect: `${back}${back.includes('?') ? '&' : '?'}ok=${enc(`${t.sku} ${t.shipment} was already marked as in Sellerboard.`)}` };
   markSellerboardDone(ctx.db, { shipment, product, actor: ctx.actor });
   return { redirect: `${back}${back.includes('?') ? '&' : '?'}ok=${enc(`${t.sku} ${t.shipment}: marked as in Sellerboard (${money(t.account, t.target.cost)}, ${fmtRmb(D(t.target.units))} units).`)}` };
-}
-
-export async function publishSellerboard(ctx) {
-  if (!Object.keys(ctx.sheets || {}).length) throw new HttpError(400, 'The Google Sheets aren’t set up yet.');
-  const r = await publishFeed({ db: ctx.db, writers: ctx.sheets });
-  const said = r.results.map((x) => (x.ok ? `${ACCOUNTS[x.account].label} sheet updated: ${x.rows} row(s).` : `${ACCOUNTS[x.account].label} sheet failed: ${x.error}`));
-  return { redirect: `/sellerboard?ok=${enc(said.join(' '))}` };
 }
