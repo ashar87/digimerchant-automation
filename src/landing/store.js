@@ -228,6 +228,24 @@ CREATE TABLE IF NOT EXISTS invoice_drafts (
   saved_as   TEXT                       -- invoice id once saved
 );
 
+-- In the supplier group: which message each reply answers (a corrected invoice is a
+-- reply to the first, or to the feedback on it), and the amounts Atif asks to be sent.
+CREATE TABLE IF NOT EXISTS group_replies (
+  id     TEXT PRIMARY KEY,               -- WhatsApp message id
+  quoted TEXT NOT NULL,                  -- the message it replies to
+  at     TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS pay_requests (
+  id        TEXT PRIMARY KEY,            -- WhatsApp message id of "1250$ send krny supplier ko"
+  chat      TEXT NOT NULL,
+  author    TEXT,
+  at        TEXT NOT NULL,
+  currency  TEXT NOT NULL,               -- USD or CNY
+  amount    TEXT NOT NULL,
+  paid      TEXT NOT NULL DEFAULT '0',   -- sent so far, from the Wise messages
+  closed_at TEXT
+);
+
 -- Transfers read from Wise, waiting to be recorded as payments.
 CREATE TABLE IF NOT EXISTS wise_transfers (
   id              TEXT PRIMARY KEY,
@@ -340,11 +358,13 @@ function migrate(db) {
   add('orders', 'review', "TEXT CHECK (review IN ('needs_review','reviewed') OR review IS NULL)"); // imported orders start as needs_review
   add('orders', 'source', 'TEXT'); // e.g. the sheet tab an imported order came from
   add('orders', 'import_notes', 'TEXT'); // JSON array shown when reviewing
-  add('shipments', 'sellerboard_manual', 'INTEGER');
+  add('shipments', 'sellerboard_manual', 'INTEGER'); // 1 = costs typed into Sellerboard by hand; the feed leaves it alone
   add('invoices', 'series', 'TEXT'); // versions of one supplier invoice share a series; a PO can hold several
   add('invoice_drafts', 'replaced_by', 'INTEGER'); // a corrected version sent later set this one aside
   add('bill_drafts', 'replaced_by', 'INTEGER');
-  add('invoices', 'supplier', 'TEXT'); // when an invoice on the PO is from a different supplier // 1 = costs typed into Sellerboard by hand; the feed leaves it alone
+  add('invoices', 'supplier', 'TEXT'); // when an invoice on the PO is from a different supplier
+  add('invoice_drafts', 'message_id', 'TEXT'); // the WhatsApp message it came in, so a reply to it is known as a corrected version
+  add('bill_drafts', 'message_id', 'TEXT');
 
   // Courier bill lines gained the 'onward' kind (goods sent to a 3PL or home, FBA
   // shipment later). SQLite can't alter a CHECK, so the table is rebuilt once.

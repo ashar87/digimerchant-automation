@@ -8,6 +8,7 @@ import { MARKETPLACES, enc, supplierList, supplierOptions } from './common.js';
 import { invoiceForm, invoiceFromForm } from './orders.js';
 import { versionField, assertFresh } from '../versions.js';
 import { addAttachment } from '../../files/attachments.js';
+import { fmtMoney } from '../../landing/money.js';
 
 const METHOD = { excel: 'Read exactly from the Excel file.', model: 'Read by Gemini. Anything it couldn’t read is left blank, never guessed.', none: 'Not read automatically.', failed: 'Reading failed.' };
 
@@ -56,16 +57,18 @@ export function draftPage(ctx) {
   const { ledger } = ctx.data;
   const existing = draft.po ? ledger.orders.find((o) => o.po === draft.po) : null;
   const order = existing || { po: draft.po || nextPo(ctx.db), marketplace: r.marketplace || undefined, invoices: [] };
+  // A corrected version, or the balance invoice, of an invoice already on this PO: saving it replaces that one.
+  const replaced = r.replaces?.po === order.po ? (existing?.invoices || []).find((i) => i.id === r.replaces.invoiceId) : null;
   const inv = {
-    kind: existing?.invoices?.length ? 'final' : r.kindGuess || 'proforma',
+    kind: replaced ? (replaced.kind === 'final' ? 'final' : r.kindGuess || 'proforma') : existing?.invoices?.length ? 'final' : r.kindGuess || 'proforma',
     date: r.date,
-    supplierRef: r.invoiceNumber,
+    // No invoice number printed: the order's date and market stand in for it, so later invoices for the order find this one.
+    supplierRef: r.invoiceNumber || r.orderRef,
     statedTotalRmb: r.statedTotalRmb,
     lines: (r.lines || []).map((l) => ({ kind: l.kind, product: l.product, qty: l.qty, rmb: l.rmb, description: l.description })),
   };
-  // A corrected version of an invoice already on this PO: saving it replaces that one.
-  const replaced = r.replaces?.po === order.po ? (existing?.invoices || []).find((i) => i.id === r.replaces.invoiceId) : null;
   if (replaced) inv.seriesChoice = replaced.series || 'main';
+  const balance = replaced && replaced.kind === 'proforma' && inv.kind === 'final';
   const pages = r.pages?.length ? html` · pages ${[0, ...r.pages.map((_, i) => i + 1)].map((n) => html`<a href="/invoices/drafts/${draft.id}/file?page=${n}">${n + 1}</a> `)}` : '';
   // The name as read off the invoice, matched to the list where one fits ("NANJING YONGBO CO." → Nanjing Yongbo).
   const read = (r.supplier || '').toLowerCase();
@@ -83,7 +86,14 @@ export function draftPage(ctx) {
 <p class="sub">${draft.filename || 'Invoice'}${draft.source === 'whatsapp' ? ` · from ${draft.created_by} on WhatsApp` : ''} · ${METHOD[r.method] || ''} <a href="/invoices/drafts/${draft.id}/file">Open the original</a>${pages}</p>
 ${draft.replaced_by ? html`<p class="notice">A corrected version came in later: <a href="/invoices/drafts/${draft.replaced_by}">invoice ${draft.replaced_by}</a>. This one was set aside.</p>` : ''}
 ${r.replaces?.draft ? html`<p class="notice">A corrected version of <a href="/invoices/drafts/${r.replaces.draft}">invoice ${r.replaces.draft}</a>, which was set aside.</p>` : ''}
-${replaced ? html`<p class="notice">A corrected version of ${order.po}’s invoice${replaced.supplierRef ? ` no. ${replaced.supplierRef}` : ''} (${replaced.kind}, ${replaced.date || 'undated'}). Saving it replaces that one; the earlier version stays in the PO’s history.</p>` : ''}
+${replaced
+  ? balance
+    ? html`<p class="notice">The balance invoice for ${order.po}${r.orderRef ? ` (order ${r.orderRef})` : ''}. Saving it replaces the deposit invoice (${replaced.date || 'undated'}), which stays in the PO’s history.</p>`
+    : html`<p class="notice">A corrected version of ${order.po}’s invoice${replaced.supplierRef ? ` ${replaced.supplierRef}` : ''} (${replaced.kind}, ${replaced.date || 'undated'}). Saving it replaces that one; the earlier version stays in the PO’s history.</p>`
+  : ''}
+${r.sameOrder?.draft ? html`<p class="notice">The ${r.kindGuess === 'final' ? 'balance' : 'deposit'} invoice for the same order as <a href="/invoices/drafts/${r.sameOrder.draft}">invoice ${r.sameOrder.draft}</a>, which is still waiting to be checked: save that one first.</p>` : ''}
+${!existing && !r.replaces && r.orderRef ? html`<p class="small">A new order (${r.orderRef}, from the invoice’s Date column), so a new PO. ${r.orderRef} is kept as the supplier ref: the corrected versions and the balance invoice for this order will find this PO by it.</p>` : ''}
+${r.payUsd ? html`<p class="small">The invoice asks for <b>$${fmtMoney(r.payUsd)}</b> now${r.rmbPerUsd ? ` at ${r.rmbPerUsd} RMB per USD` : ''}.</p>` : ''}
 ${r.marketplaceAsPrinted ? html`<p class="small">Marketplace printed on the invoice: <b>${r.marketplaceAsPrinted}</b> (suppliers sometimes print the wrong one).</p>` : ''}
 ${r.notes ? html`<p class="notice">${r.notes}</p>` : ''}
 <div class="card"><ul class="items">${(r.checks || []).map((c) => html`<li><span class="sev ${c.severity === 'ok' ? 'info' : 'warning'}">${c.severity === 'ok' ? '✓' : '!'}</span><div style="flex:1">${c.message}</div></li>`)}</ul></div>

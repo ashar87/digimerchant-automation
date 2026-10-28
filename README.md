@@ -441,14 +441,24 @@ npm test
 - `src/invoices/` reads supplier invoices: Excel exactly, PDFs and photos with Gemini (blanks
   stay blank, never guessed), then checks the arithmetic in code. Uploads and invoices
   posted in the supplier group become drafts that a person checks before they join an order.
-- `src/intake/` reads the supplier group (`files` in config/chats.json, found by name): each
-  photo or PDF is sorted by Gemini (invoice, courier bill, or neither), photos one person sends
-  together are pages of one document, and each document becomes an invoice or bill draft with
-  a card in the self-chat. A corrected invoice (same supplier invoice number) sets a waiting
-  draft aside, or is lined up to replace the saved one; a corrected bill (same shipments) sets
-  a waiting one aside. Downloads here ignore ENABLE_IMAGES / ENABLE_DOCUMENTS. Wise payment
-  messages with a wise.com link become transfers to record (`src/wise/whatsapp.js`); the GBP
-  is taken from the link's page when it shows it.
+- `src/intake/` reads the supplier group (`files` in config/chats.json, found by name). The
+  rules come from the group's real messages: Atif posts screenshots of Annie's sheets (often an
+  album of an invoice and one or two shipping bills), then "1250$ send krny supplier ko"; Ashar
+  replies with the Wise message. Each picture is sorted by Gemini and is one document unless it
+  plainly continues the one before; each invoice or bill becomes a draft, and one card per batch
+  says whether the documents' USD lines add up to the amount asked.
+  Suppliers print no invoice number, but every row carries the order's date and market
+  ("2026/10/5-UK 英国"), kept as the invoice's supplier ref: a deposit invoice for a new one is a
+  new PO, the balance invoice for a known one goes to its PO and replaces the deposit invoice.
+  A picture sent as a reply to an earlier one, or to the feedback on it (`group_replies`), is
+  its corrected version: a waiting draft is set aside, a saved invoice is lined up to be
+  replaced. Bills are also matched by tracking numbers, since the FBA IDs are often what was
+  wrong. Downloads here ignore ENABLE_IMAGES / ENABLE_DOCUMENTS.
+  Wise messages ("You should receive 500 USD", or CNY) become transfers to record
+  (`src/wise/whatsapp.js`) and are set against Atif's open requests (`pay_requests`), so a
+  split payment, or one $9 off, is called out on the card. The GBP is taken from the link's
+  page when it shows it. `scripts/fetch-group-files.js` copies a group's recent files and
+  messages into `private/` to study them (listener stopped first).
 - `src/wise/` and `src/quickbooks/` suggest payments from Wise transfers and fill in the QB
   exchange rate for the payment date. A rate is only used for its exact day; otherwise the
   payment shows "rate pending". Both stay off until their keys are set.

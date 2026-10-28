@@ -63,22 +63,9 @@ export function downloadByHash(page, hash, { limitMs = PAGE_LIMIT_MS } = {}) {
       const stage = () => m.mediaData?.mediaStage || '(no mediaData)';
       if (stage() === 'REUPLOADING') return { reason: 'reuploading', detail: 'expired on the server; the phone is re-uploading it' };
 
-      // What the library does before decrypting: ask WhatsApp to resolve the media.
-      if (m.mediaData && stage() !== 'RESOLVED') {
-        try {
-          await within(m.downloadMedia({ downloadEvenIfExpensive: true, rmrReason: 1 }), 'resolving the media');
-        } catch (e) {
-          if (e?.name === 'StepTimeout') return { reason: 'timeout', detail: `stage ${stage()}: ${e.message}` };
-          return { reason: 'resolve-failed', detail: `stage ${stage()}: ${explain(e)}` };
-        }
-      }
-      if (stage().includes('ERROR') || stage() === 'FETCHING') return { reason: 'not-ready', detail: `stage ${stage()}` };
-      if (!m.directPath || !m.mediaKey) return { reason: 'no-media-path', detail: `stage ${stage()}, directPath ${!!m.directPath}, mediaKey ${!!m.mediaKey}` };
-
-      let buffer;
-      try {
+      const decrypt = () => {
         const mockQpl = { addAnnotations() { return this; }, addPoint() { return this; } };
-        buffer = await within(window.require('WAWebDownloadManager').downloadManager.downloadAndMaybeDecrypt({
+        return within(window.require('WAWebDownloadManager').downloadManager.downloadAndMaybeDecrypt({
           directPath: m.directPath,
           encFilehash: m.encFilehash,
           filehash: m.filehash,
@@ -92,9 +79,38 @@ export function downloadByHash(page, hash, { limitMs = PAGE_LIMIT_MS } = {}) {
           signal: new AbortController().signal,
           downloadQpl: mockQpl,
         }), 'downloading and decrypting');
-      } catch (e) {
-        if (e?.name === 'StepTimeout') return { reason: 'timeout', detail: `stage ${stage()}: ${e.message}` };
-        return { reason: 'decrypt-failed', detail: `stage ${stage()}: ${explain(e)}` };
+      };
+
+      // Where the file is and its key are often known already: fetch it straight
+      // away. Asking WhatsApp to resolve it first hangs for photos still showing
+      // their preview (stage PROGRESSIVE_READY / DECRYPTING; seen 28 Oct 2026).
+      let buffer = null;
+      if (m.directPath && m.mediaKey) {
+        try {
+          buffer = await decrypt();
+        } catch {
+          buffer = null; // fall back to resolving first, below
+        }
+      }
+
+      if (!buffer) {
+        // What the library does before decrypting: ask WhatsApp to resolve the media.
+        if (m.mediaData && stage() !== 'RESOLVED') {
+          try {
+            await within(m.downloadMedia({ downloadEvenIfExpensive: true, rmrReason: 1 }), 'resolving the media');
+          } catch (e) {
+            if (e?.name === 'StepTimeout') return { reason: 'timeout', detail: `stage ${stage()}: ${e.message}` };
+            return { reason: 'resolve-failed', detail: `stage ${stage()}: ${explain(e)}` };
+          }
+        }
+        if (stage().includes('ERROR') || stage() === 'FETCHING') return { reason: 'not-ready', detail: `stage ${stage()}` };
+        if (!m.directPath || !m.mediaKey) return { reason: 'no-media-path', detail: `stage ${stage()}, directPath ${!!m.directPath}, mediaKey ${!!m.mediaKey}` };
+        try {
+          buffer = await decrypt();
+        } catch (e) {
+          if (e?.name === 'StepTimeout') return { reason: 'timeout', detail: `stage ${stage()}: ${e.message}` };
+          return { reason: 'decrypt-failed', detail: `stage ${stage()}: ${explain(e)}` };
+        }
       }
       if (!buffer) return { reason: 'empty', detail: `stage ${stage()}: download returned nothing` };
 

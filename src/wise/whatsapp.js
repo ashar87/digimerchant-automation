@@ -1,6 +1,7 @@
 /**
- * The Wise payment messages Ashar posts in the supplier group: the USD sent and
- * a wise.com link. Each becomes a Wise transfer waiting to be recorded (the
+ * The Wise payment messages Ashar posts in the supplier group: "Hey TEST TRADING
+ * LTD, I just sent you money with Wise. You should receive 500 USD …"
+ * (or "… 12000 CNY") and a wise.com link. Each becomes a Wise transfer waiting to be recorded (the
  * /wise page and the Inbox), so the payment form opens already filled in.
  *
  * The message doesn't say what the USD cost in GBP. The link's page is read for
@@ -10,6 +11,8 @@
 const LINK = /https:\/\/(?:[\w-]+\.)*wise\.com\/[^\s<>"')]+/i;
 const NUM = '(\\d{1,3}(?:,\\d{3})+(?:\\.\\d{1,2})?|\\d+(?:\\.\\d{1,2})?)';
 const USD = [new RegExp(`(?:US\\$|\\$|USD\\s*)${NUM}`, 'i'), new RegExp(`${NUM}\\s*(?:USD|US dollars?|dollars?)\\b`, 'i')];
+const CNY = [new RegExp(`(?:CNY|RMB|¥)\\s*${NUM}`, 'i'), new RegExp(`${NUM}\\s*(?:CNY|RMB|yuan)\\b`, 'i')];
+const RECIPIENT = /^\s*(?:hey|hi)\s+(.{2,80}?),\s*I just sent you money/i;
 const GBP = [new RegExp(`(?:£|GBP\\s*)${NUM}`, 'i'), new RegExp(`${NUM}\\s*GBP\\b`, 'i')];
 const amount = (res, s) => {
   for (const re of res) {
@@ -19,12 +22,13 @@ const amount = (res, s) => {
   return null;
 };
 
-/** The link and USD amount in a message, or null if it isn't a Wise payment message. */
+/** The link, recipient and amount sent (USD or CNY) in a message, or null if it isn't a Wise payment message. */
 export function parseWiseMessage(body = '') {
   const link = LINK.exec(body)?.[0] || null;
   if (!link) return null;
   const text = body.replace(link, ' ');
-  return { link, usd: amount(USD, text), gbp: amount(GBP, text) };
+  const usd = amount(USD, text);
+  return { link, recipient: RECIPIENT.exec(text)?.[1].trim() || null, usd, cny: usd ? null : amount(CNY, text), gbp: amount(GBP, text) };
 }
 
 const isWise = (url) => {
@@ -66,12 +70,13 @@ export async function noteWiseMessage(db, { id, timestamp, body, readLink = read
   const key = `wa:${id}`;
   if (db.prepare('SELECT 1 FROM wise_transfers WHERE id = ?').get(key)) return null;
   const page = await readLink(parsed.link);
-  const usd = parsed.usd || page.usd || null;
+  const usd = parsed.usd || (parsed.cny ? null : page.usd) || null;
+  const cny = parsed.cny || null;
   const gbp = parsed.gbp || page.gbp || null;
   const created = new Date(timestamp * 1000).toISOString();
   const reference = body.replace(parsed.link, '').replace(/\s+/g, ' ').trim().slice(0, 300) || null;
   db.prepare(`INSERT INTO wise_transfers (id, created, reference, status, source_currency, source_value, target_currency, target_value, rate, raw)
     VALUES (?, ?, ?, 'outgoing_payment_sent', ?, ?, ?, ?, NULL, ?)`)
-    .run(key, created, reference, gbp ? 'GBP' : null, gbp, usd ? 'USD' : null, usd, JSON.stringify({ from: 'whatsapp', link: parsed.link, page: page.error ? { error: page.error } : { gbp: page.gbp || null, usd: page.usd || null } }));
-  return { id: key, usd, gbp, gbpFrom: parsed.gbp ? 'message' : page.gbp ? 'link' : null, linkError: page.error || null };
+    .run(key, created, reference, gbp ? 'GBP' : null, gbp, usd ? 'USD' : cny ? 'CNY' : null, usd || cny, JSON.stringify({ from: 'whatsapp', link: parsed.link, recipient: parsed.recipient, page: page.error ? { error: page.error } : { gbp: page.gbp || null, usd: page.usd || null } }));
+  return { id: key, usd, cny, recipient: parsed.recipient, gbp, gbpFrom: parsed.gbp ? 'message' : page.gbp ? 'link' : null, linkError: page.error || null };
 }

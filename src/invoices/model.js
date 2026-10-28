@@ -13,7 +13,9 @@ Copy exactly what is printed. Rules:
 - Copy descriptions as printed, in the language printed (Chinese or English).
 - Amounts are in RMB unless the invoice clearly says another currency; report the currency you see.
 - One entry in "lines" per printed line item, including service fees, labour/packing charges and rate-difference lines.
-- "depositReceived" is a deposit the invoice says was already paid; "deposit" is one it asks for now.`;
+- "depositReceived" is a deposit the invoice says was already paid; "deposit" is one it asks for now.
+- Some invoices print the order's date and market in a Date column on every row, e.g. "2026/10/5-UK 英国" or "2026/09/15-德国-GM": give that date as "orderDate" and the market as "marketplaceAsPrinted".
+- "payUsd" is the USD amount the invoice finally asks to be paid now (usually the last yellow line, e.g. "70% balance (USD) Today rate 6.60"), and "rmbPerUsd" the rate printed with it.`;
 
 const num = { type: 'NUMBER', nullable: true };
 const str = { type: 'STRING', nullable: true };
@@ -39,6 +41,9 @@ export const INVOICE_SCHEMA = {
     deposit: num,
     depositReceived: num,
     balance: num,
+    orderDate: { ...str, description: 'The order date printed in the Date column, as yyyy-mm-dd' },
+    payUsd: { ...num, description: 'The USD amount to pay now, as printed' },
+    rmbPerUsd: { ...num, description: 'The exchange rate printed with it (RMB per USD)' },
     notes: { ...str, description: 'Anything printed that affects price, e.g. gold-price re-pricing terms' },
   },
   required: ['lines', 'total'],
@@ -64,6 +69,8 @@ export function geminiInvoiceReader(provider) {
   };
 }
 
+const iso = (d) => (/^\d{4}-\d{2}-\d{2}$/.test(d || '') ? d : null);
+
 /** The model's answer in the same shape the Excel reader produces. */
 export function normaliseModelReading(raw) {
   const v = (x) => (x === null || x === undefined || Number.isNaN(x) ? null : D(x).toString());
@@ -79,7 +86,8 @@ export function normaliseModelReading(raw) {
     model: raw.model,
     supplier: raw.supplier || null,
     invoiceNumber: raw.invoiceNumber || null,
-    date: /^\d{4}-\d{2}-\d{2}$/.test(raw.date || '') ? raw.date : null,
+    date: iso(raw.date) || iso(raw.orderDate),
+    orderDate: iso(raw.orderDate),
     marketplaceAsPrinted: raw.marketplaceAsPrinted || null,
     lines,
     statedTotalRmb: v(raw.total),
@@ -87,6 +95,8 @@ export function normaliseModelReading(raw) {
     depositRmb: v(raw.deposit),
     depositReceivedRmb: v(raw.depositReceived),
     balanceRmb: v(raw.balance),
+    payUsd: v(raw.payUsd),
+    rmbPerUsd: v(raw.rmbPerUsd),
     notes: raw.notes || null,
     kindGuess: raw.depositReceived || raw.balance ? 'final' : 'proforma',
     unread,

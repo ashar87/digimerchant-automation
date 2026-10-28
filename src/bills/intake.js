@@ -53,7 +53,7 @@ async function addShipmentsFromAmazon(db, amazon, raw, shipments) {
 }
 
 /** `pages`: further photos of the same bill, read with the first (as for invoices). */
-export async function intakeBill({ db, buffer, filename, mime, source = 'upload', actor, reader = null, amazon = null, dir = INVOICE_DIR, today = new Date().toISOString().slice(0, 10), pages = [] }) {
+export async function intakeBill({ db, buffer, filename, mime, source = 'upload', actor, reader = null, amazon = null, dir = INVOICE_DIR, today = new Date().toISOString().slice(0, 10), pages = [], messageId = null }) {
   if (!buffer?.length) throw new Error('The file is empty');
   if (buffer.length > MAX_BYTES) throw new Error('The file is over 15 MB');
   mime = mimeFor(filename, mime);
@@ -82,6 +82,9 @@ export async function intakeBill({ db, buffer, filename, mime, source = 'upload'
       const asked = looked.map((n) => n.id).filter(Boolean);
       const notes = read.notes.filter((n) => !asked.some((id) => n.message.includes(`${id} isn't on the dashboard`)));
       reading = { method, ...(raw.model ? { model: raw.model } : {}), ...read, notes: [...looked, ...notes], ...(raw.sourceText ? { sourceText: raw.sourceText } : {}) };
+      // The courier's tracking numbers: the same on a corrected version even when the FBA IDs were wrong.
+      const tracking = [...new Set((raw.rows || []).map((x) => String(x.tracking || '').replace(/\s+/g, '').toUpperCase()).filter((x) => x.length >= 6))];
+      if (tracking.length) reading.tracking = tracking.sort();
     } else if (method === 'excel') reading = { method, lines: [], unread: ['The bill’s lines (no FBA ID / amount columns found)'] };
     else reading = { method: 'none', lines: [], unread: ['Everything: bill reading by Gemini is not set up, so enter the lines by hand'] };
   } catch (err) {
@@ -97,8 +100,8 @@ export async function intakeBill({ db, buffer, filename, mime, source = 'upload'
   if (pagePaths.length) reading.pages = pagePaths;
 
   const res = db
-    .prepare('INSERT INTO bill_drafts (created_at, created_by, source, file_path, filename, mime, reading) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(new Date().toISOString(), actor, source, path.relative(ROOT, filePath), filename || null, mime, JSON.stringify(reading));
+    .prepare('INSERT INTO bill_drafts (created_at, created_by, source, file_path, filename, mime, reading, message_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(new Date().toISOString(), actor, source, path.relative(ROOT, filePath), filename || null, mime, JSON.stringify(reading), messageId);
   return getBillDraft(db, Number(res.lastInsertRowid));
 }
 

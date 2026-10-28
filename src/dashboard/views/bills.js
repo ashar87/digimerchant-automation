@@ -174,7 +174,11 @@ export function billDraftPage(ctx) {
 <p class="sub">${draft.filename || 'Courier bill'}${draft.source === 'whatsapp' ? ` · from ${draft.created_by} on WhatsApp` : ''} · ${METHOD[r.method] || ''} <a href="/bills/drafts/${draft.id}/file" target="_blank">Open the original</a>${r.pages?.length ? html` · pages ${[0, ...r.pages.map((_, i) => i + 1)].map((n) => html`<a href="/bills/drafts/${draft.id}/file?page=${n}" target="_blank">${n + 1}</a> `)}` : ''}</p>
 ${draft.replaced_by ? html`<p class="notice">A corrected version came in later: <a href="/bills/drafts/${draft.replaced_by}">bill ${draft.replaced_by}</a>. This one was set aside.</p>` : draft.status !== 'pending' ? html`<p class="notice">This bill was already ${draft.status}${draft.saved_as ? html` as <a href="/bills/${enc(draft.saved_as)}">${draft.saved_as}</a>` : ''}.</p>` : ''}
 ${r.replaces?.draft ? html`<p class="notice">A corrected version of <a href="/bills/drafts/${r.replaces.draft}">bill ${r.replaces.draft}</a>, which was set aside.</p>` : ''}
-${r.replaces?.bill ? html`<p class="notice"><a href="/bills/${enc(r.replaces.bill)}">${r.replaces.bill}</a> already covers the same shipments. If this corrects it, edit ${r.replaces.bill} and discard this one.</p>` : ''}
+${r.replaces?.bill
+  ? r.replaces.how === 'reply'
+    ? html`<p class="notice">A corrected version of <a href="/bills/${enc(r.replaces.bill)}">${r.replaces.bill}</a>, which is already saved (it was sent as a reply to it). Fix ${r.replaces.bill} from this one, then discard this one.</p>`
+    : html`<p class="notice"><a href="/bills/${enc(r.replaces.bill)}">${r.replaces.bill}</a> already covers the same shipments. If this corrects it, edit ${r.replaces.bill} and discard this one.</p>`
+  : ''}
 ${r.totalUsd ? html`<p class="small">The bill asks for <b>$${fmtMoney(r.totalUsd)}</b>${r.rmbPerUsd ? ` at ${r.rmbPerUsd} RMB per USD` : ''}. Record the payment against this bill once it’s saved.</p>` : ''}
 ${(r.lines || []).some((l) => l.kind === 'onward') ? onwardGuide(true) : ''}
 ${(r.checks || []).length ? html`<div class="card"><ul class="items">${r.checks.map((c) => html`<li><span class="sev ${c.severity === 'ok' ? 'info' : 'warning'}">${c.severity === 'ok' ? '✓' : '!'}</span><div style="flex:1">${c.message}</div></li>`)}</ul></div>` : ''}
