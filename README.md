@@ -440,8 +440,15 @@ npm test
   the list existed are held back, each with its reason.
 - `src/invoices/` reads supplier invoices: Excel exactly, PDFs and photos with Gemini (blanks
   stay blank, never guessed), then checks the arithmetic in code. Uploads and invoices
-  forwarded to the WhatsApp self-chat (`handleForwardedInvoice`, not wired into the listener
-  yet) become drafts that a person checks before they join an order.
+  posted in the supplier group become drafts that a person checks before they join an order.
+- `src/intake/` reads the supplier group (`files` in config/chats.json, found by name): each
+  photo or PDF is sorted by Gemini (invoice, courier bill, or neither), photos one person sends
+  together are pages of one document, and each document becomes an invoice or bill draft with
+  a card in the self-chat. A corrected invoice (same supplier invoice number) sets a waiting
+  draft aside, or is lined up to replace the saved one; a corrected bill (same shipments) sets
+  a waiting one aside. Downloads here ignore ENABLE_IMAGES / ENABLE_DOCUMENTS. Wise payment
+  messages with a wise.com link become transfers to record (`src/wise/whatsapp.js`); the GBP
+  is taken from the link's page when it shows it.
 - `src/wise/` and `src/quickbooks/` suggest payments from Wise transfers and fill in the QB
   exchange rate for the payment date. A rate is only used for its exact day; otherwise the
   payment shows "rate pending". Both stay off until their keys are set.

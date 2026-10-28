@@ -11,6 +11,7 @@ import { transcribe } from './media/transcribe.js';
 import { recoverMissed } from './whatsapp/recover.js';
 import { requestAppCacheClear } from './whatsapp/session.js';
 import { getProvider } from './providers/index.js';
+import { createGroupIntake } from './intake/listener.js';
 import * as store from './store/db.js';
 
 let chats;
@@ -25,6 +26,8 @@ try {
 const client = createWhatsAppClient();
 const approval = createApprovalFlow(client);
 const startedAt = Math.floor(Date.now() / 1000) - config.catchUpMinutes * 60;
+// The supplier group: invoices, courier bills and Wise payments, never tasks.
+const groupIntake = createGroupIntake({ client, chats, db: () => store.landingDb(), log, onQueued: () => deliverCards() });
 
 /* ---------- buffered conversation -> Claude -> approval cards ---------- */
 
@@ -68,6 +71,13 @@ client.on('message_create', async (msg) => {
     // Your own self-chat is the control channel, never a source of tasks.
     if (approval.isSelfChat(m.chatId)) {
       await approval.handleReply(msg, m);
+      return;
+    }
+
+    if (groupIntake.has(m.chatId)) {
+      if (m.timestamp < startedAt || store.alreadySeen(m.id)) return;
+      store.markSeen(m.id);
+      await groupIntake.handle(msg, m);
       return;
     }
 
@@ -219,6 +229,7 @@ client.on('ready', async () => {
   log.ok(`connected as ${client.info.pushname} (${client.info.wid.user})`);
   log.info(`watching ${chats.watch.length} chat(s):`);
   for (const c of chats.watch) log.info(`   • ${c.label}`);
+  await groupIntake.resolve();
   const p = getProvider();
   const model = p.name === 'gemini' ? config.geminiModel : config.anthropicModel;
   const media = [
@@ -345,6 +356,7 @@ async function shutdown(signal) {
   shuttingDown = true;
   log.warn(`${signal} — flushing buffered conversations before exit`);
   await buffer.flushAll();
+  await groupIntake.flushAll().catch((err) => log.error('could not take in the supplier group’s last files:', err.message));
   await client.destroy().catch(() => {});
   process.exit(0);
 }

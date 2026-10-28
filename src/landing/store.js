@@ -342,6 +342,8 @@ function migrate(db) {
   add('orders', 'import_notes', 'TEXT'); // JSON array shown when reviewing
   add('shipments', 'sellerboard_manual', 'INTEGER');
   add('invoices', 'series', 'TEXT'); // versions of one supplier invoice share a series; a PO can hold several
+  add('invoice_drafts', 'replaced_by', 'INTEGER'); // a corrected version sent later set this one aside
+  add('bill_drafts', 'replaced_by', 'INTEGER');
   add('invoices', 'supplier', 'TEXT'); // when an invoice on the PO is from a different supplier // 1 = costs typed into Sellerboard by hand; the feed leaves it alone
 
   // Courier bill lines gained the 'onward' kind (goods sent to a 3PL or home, FBA

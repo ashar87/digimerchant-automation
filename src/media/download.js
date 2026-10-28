@@ -22,6 +22,7 @@ export function classify(type, mime = '') {
   if (type === 'ptt' || type === 'audio') return 'audio';
   if (type === 'document') {
     if (base === 'application/pdf') return 'pdf';
+    if (IMAGE_MIMES.includes(base)) return 'image'; // a photo sent as a file
     if (SHEET_MIMES.includes(base)) return 'sheet';
   }
   return null; // video, stickers, contacts, locations, unsupported docs
@@ -44,7 +45,9 @@ export function isEnabled(kind) {
 const DOWNLOAD_WAITS_MS = [2000, 4000, 8000, 15000, 30000];
 const DOWNLOAD_ATTEMPTS = DOWNLOAD_WAITS_MS.length + 1;
 
-export async function downloadAttachment(msg, described) {
+/** `force`: download images and documents even when switched off in .env (the supplier group's files). */
+export async function downloadAttachment(msg, described, { force = false } = {}) {
+  const allowed = (kind) => (force ? kind === 'image' || kind === 'pdf' || kind === 'sheet' : isEnabled(kind));
   if (!MEDIA_TYPES.includes(described.type)) return null;
 
   const limit = config.maxAttachmentMb * 1024 * 1024;
@@ -56,7 +59,7 @@ export async function downloadAttachment(msg, described) {
   }
 
   // Cheap reject before downloading, when the mime is already known.
-  if (described.mime && !isEnabled(classify(described.type, described.mime))) return null;
+  if (described.mime && !allowed(classify(described.type, described.mime))) return null;
 
   // Media often isn't ready on the linked device the instant a message arrives:
   // the sender's phone may still be uploading it, or WhatsApp hasn't resolved it.
@@ -95,7 +98,7 @@ export async function downloadAttachment(msg, described) {
   }
 
   const kind = classify(described.type, media.mimetype);
-  if (!kind || !isEnabled(kind)) return null;
+  if (!kind || !allowed(kind)) return null;
 
   const bytes = Buffer.byteLength(media.data, 'base64');
   if (bytes > limit) {

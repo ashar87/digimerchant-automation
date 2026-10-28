@@ -19,5 +19,8 @@
     "Ashar": ["ashar", "me", "you"],
     "Atif": ["atif"],
     "Rafay": ["rafay", "rafey", "raf"]
-  }
+  },
+  "files": [
+    { "name": "Supplier group name, exactly as WhatsApp shows it", "label": "Supplier group", "_comment": "Read for supplier invoices, courier bills and Wise payment messages only, never for tasks. The id is looked up by name; add \"id\" if two groups share the name." }
+  ]
 }

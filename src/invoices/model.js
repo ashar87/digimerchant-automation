@@ -48,12 +48,13 @@ export const INVOICE_SCHEMA = {
 export function geminiInvoiceReader(provider) {
   return {
     name: 'gemini',
-    async read({ mime, data }) {
+    async read({ mime, data, more = [] }) {
       const kind = mime === 'application/pdf' ? 'pdf' : 'image';
+      const att = (a) => ({ kind: a.mime === 'application/pdf' ? 'pdf' : 'image', mime: a.mime, data: a.data });
       const out = await provider.readJson({
         system: SYSTEM,
-        text: 'Read this supplier invoice. Return null for anything you cannot read with certainty.',
-        attachments: [{ kind, mime, data }],
+        text: `Read this supplier invoice${more.length ? ` (the ${more.length + 1} attachments are its pages, in order)` : ''}. Return null for anything you cannot read with certainty.`,
+        attachments: [{ kind, mime, data }, ...more.map(att)],
         schema: INVOICE_SCHEMA,
         job: 'invoice',
         label: kind === 'pdf' ? 'Invoice PDF' : 'Invoice photo',

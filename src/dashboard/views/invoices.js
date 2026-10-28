@@ -1,14 +1,13 @@
 import fs from 'node:fs';
-import path from 'node:path';
 import { html, select } from '../html.js';
 import { saveLedger, nextPo } from '../../landing/store.js';
-import { ROOT } from '../../config.js';
-import { intakeInvoice, getDraft, pendingDrafts, closeDraft, INVOICE_DIR } from '../../invoices/intake.js';
+import { intakeInvoice, getDraft, pendingDrafts, closeDraft, draftFilePath } from '../../invoices/intake.js';
 import { text, required, compact } from '../forms.js';
 import { HttpError, notFound } from '../errors.js';
 import { MARKETPLACES, enc, supplierList, supplierOptions } from './common.js';
 import { invoiceForm, invoiceFromForm } from './orders.js';
 import { versionField, assertFresh } from '../versions.js';
+import { addAttachment } from '../../files/attachments.js';
 
 const METHOD = { excel: 'Read exactly from the Excel file.', model: 'Read by Gemini. Anything it couldn’t read is left blank, never guessed.', none: 'Not read automatically.', failed: 'Reading failed.' };
 
@@ -16,7 +15,7 @@ export function invoicesPage(ctx) {
   const drafts = pendingDrafts(ctx.db);
   const body = html`
 <h1>Invoices</h1>
-<p class="sub">Upload a proforma or final invoice, or forward it to your WhatsApp self-chat with the caption “invoice PO-020”. Excel is read exactly; PDFs and photos are read by Gemini. Either way you check it before it’s saved.</p>
+<p class="sub">Invoices Atif posts in the supplier group on WhatsApp arrive here by themselves; anything else, upload. Excel is read exactly; PDFs and photos are read by Gemini. Either way you check it before it’s saved, and a corrected version sent later takes the earlier one’s place.</p>
 <form class="card" method="post" action="/invoices/upload" enctype="multipart/form-data">
 <div class="grid">
   <div><label>Invoice file (Excel, PDF or photo)</label><input type="file" name="file" required accept=".xlsx,.pdf,.jpg,.jpeg,.png,.webp,.heic"></div>
@@ -28,7 +27,7 @@ export function invoicesPage(ctx) {
 <h2>Waiting to be checked (${drafts.length})</h2>
 ${drafts.length
   ? html`<div class="card"><ul class="items">${drafts.map((d) => html`<li><div><a href="/invoices/drafts/${d.id}">${d.filename || `Invoice ${d.id}`}</a>${d.po ? ` · ${d.po}` : ''}
-  <div class="muted small">${d.source === 'whatsapp' ? 'Forwarded on WhatsApp' : `Uploaded by ${d.created_by}`} · ${d.created_at.slice(0, 16).replace('T', ' ')} · ${d.reading.lines?.length || 0} line(s)</div></div></li>`)}</ul></div>`
+  <div class="muted small">${d.source === 'whatsapp' ? `From ${d.created_by} on WhatsApp` : `Uploaded by ${d.created_by}`}${d.reading.replaces ? ' · corrected version' : ''} · ${d.created_at.slice(0, 16).replace('T', ' ')} · ${d.reading.lines?.length || 0} line(s)</div></div></li>`)}</ul></div>`
   : html`<p class="muted">None.</p>`}`;
   return { title: 'Invoices', body };
 }
@@ -64,6 +63,10 @@ export function draftPage(ctx) {
     statedTotalRmb: r.statedTotalRmb,
     lines: (r.lines || []).map((l) => ({ kind: l.kind, product: l.product, qty: l.qty, rmb: l.rmb, description: l.description })),
   };
+  // A corrected version of an invoice already on this PO: saving it replaces that one.
+  const replaced = r.replaces?.po === order.po ? (existing?.invoices || []).find((i) => i.id === r.replaces.invoiceId) : null;
+  if (replaced) inv.seriesChoice = replaced.series || 'main';
+  const pages = r.pages?.length ? html` · pages ${[0, ...r.pages.map((_, i) => i + 1)].map((n) => html`<a href="/invoices/drafts/${draft.id}/file?page=${n}">${n + 1}</a> `)}` : '';
   // The name as read off the invoice, matched to the list where one fits ("NANJING YONGBO CO." → Nanjing Yongbo).
   const read = (r.supplier || '').toLowerCase();
   const supplier = existing?.supplier || (read && supplierList(ctx).find((n) => read.includes(n.toLowerCase()) || n.toLowerCase().includes(read))) || r.supplier || '';
@@ -77,12 +80,17 @@ export function draftPage(ctx) {
   const body = html`
 <p class="muted small"><a href="/invoices">Invoices</a></p>
 <h1>Check before saving</h1>
-<p class="sub">${draft.filename || 'Invoice'} · ${METHOD[r.method] || ''} <a href="/invoices/drafts/${draft.id}/file">Open the original</a></p>
+<p class="sub">${draft.filename || 'Invoice'}${draft.source === 'whatsapp' ? ` · from ${draft.created_by} on WhatsApp` : ''} · ${METHOD[r.method] || ''} <a href="/invoices/drafts/${draft.id}/file">Open the original</a>${pages}</p>
+${draft.replaced_by ? html`<p class="notice">A corrected version came in later: <a href="/invoices/drafts/${draft.replaced_by}">invoice ${draft.replaced_by}</a>. This one was set aside.</p>` : ''}
+${r.replaces?.draft ? html`<p class="notice">A corrected version of <a href="/invoices/drafts/${r.replaces.draft}">invoice ${r.replaces.draft}</a>, which was set aside.</p>` : ''}
+${replaced ? html`<p class="notice">A corrected version of ${order.po}’s invoice${replaced.supplierRef ? ` no. ${replaced.supplierRef}` : ''} (${replaced.kind}, ${replaced.date || 'undated'}). Saving it replaces that one; the earlier version stays in the PO’s history.</p>` : ''}
 ${r.marketplaceAsPrinted ? html`<p class="small">Marketplace printed on the invoice: <b>${r.marketplaceAsPrinted}</b> (suppliers sometimes print the wrong one).</p>` : ''}
 ${r.notes ? html`<p class="notice">${r.notes}</p>` : ''}
 <div class="card"><ul class="items">${(r.checks || []).map((c) => html`<li><span class="sev ${c.severity === 'ok' ? 'info' : 'warning'}">${c.severity === 'ok' ? '✓' : '!'}</span><div style="flex:1">${c.message}</div></li>`)}</ul></div>
-${invoiceForm(ctx, order, inv, { action: `/invoices/drafts/${draft.id}/save`, submit: 'Save to this PO', head, version: html`${versionField(existing)}<input type="hidden" name="version_po" value="${order.po}">` })}
-<form method="post" action="/invoices/drafts/${draft.id}/discard"><button class="danger">Discard</button></form>
+${draft.status === 'pending'
+  ? html`${invoiceForm(ctx, order, inv, { action: `/invoices/drafts/${draft.id}/save`, submit: 'Save to this PO', head, version: html`${versionField(existing)}<input type="hidden" name="version_po" value="${order.po}">` })}
+<form method="post" action="/invoices/drafts/${draft.id}/discard"><button class="danger">Discard</button></form>`
+  : draft.replaced_by ? '' : html`<p class="notice">This invoice was already ${draft.status}${draft.saved_as ? ` as ${draft.saved_as}` : ''}.</p>`}
 ${r.sourceText ? html`<details><summary>What the Excel file says</summary><pre class="small" style="white-space:pre-wrap">${r.sourceText}</pre></details>` : ''}`;
   return { title: 'Check invoice', body };
 }
@@ -107,6 +115,11 @@ export function saveDraft(ctx) {
   const invoice = invoiceFromForm(f, order, ledger, null, { filePath: draft.file_path });
   order.invoices = [...(order.invoices || []), invoice];
   saveLedger(ctx.db, { orders: [order] }, { actor: ctx.actor });
+  // Further pages of a photographed invoice go on as its documents.
+  (draft.reading.pages || []).forEach((_, i) => {
+    const file = draftFilePath(draft, i + 1);
+    if (file) addAttachment(ctx.db, { entity: 'invoice', entityId: invoice.id, buffer: fs.readFileSync(file), filename: `${invoice.id} page ${i + 2}${file.slice(file.lastIndexOf('.'))}`, actor: ctx.actor });
+  });
   closeDraft(ctx.db, draft.id, 'saved', invoice.id);
   return { redirect: `/orders/${enc(po)}?ok=${enc(`Invoice saved to ${po}.`)}` };
 }
@@ -119,9 +132,12 @@ export function discardDraft(ctx) {
 
 export function draftFile(ctx) {
   const draft = loadDraft(ctx);
-  const file = path.resolve(ROOT, draft.file_path);
-  // Only ever serve files from the invoice folder.
-  if (!file.startsWith(path.resolve(INVOICE_DIR) + path.sep) || !fs.existsSync(file)) throw notFound('That file');
+  const page = Number(ctx.url.searchParams.get('page') || 0);
+  const file = draftFilePath(draft, page);
+  if (!file) throw notFound('That file');
+  if (page) return { body: fs.readFileSync(file), type: mimeOf(file), headers: { 'Content-Disposition': 'inline' } };
   return { body: fs.readFileSync(file), type: draft.mime || 'application/octet-stream', headers: { 'Content-Disposition': `inline; filename="${(draft.filename || 'invoice').replace(/["\r\n]/g, '')}"` } };
 }
 
+
+const mimeOf = (file) => ({ '.pdf': 'application/pdf', '.png': 'image/png', '.webp': 'image/webp', '.heic': 'image/heic' })[file.slice(file.lastIndexOf('.')).toLowerCase()] || 'image/jpeg';

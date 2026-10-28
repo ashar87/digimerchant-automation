@@ -9,11 +9,11 @@ export function wisePage(ctx) {
   const body = html`
 <p class="muted small"><a href="/payments">Payments</a></p>
 <h1>From Wise</h1>
-<p class="sub">Transfers read from Wise that aren’t recorded as payments yet. Recording one opens the payment form filled in from the transfer; check what it paid for before saving.</p>
-${ctx.wise ? html`<form class="card" method="post" action="/wise/fetch"><button class="ghost">Read the last 30 days from Wise</button></form>` : html`<p class="notice">Wise isn’t connected. Add a read-only API token (WISE_API_TOKEN) to turn this on.</p>`}
+<p class="sub">Transfers that aren’t recorded as payments yet: the Wise payment messages you post in the supplier group on WhatsApp${ctx.wise ? ', and transfers read from Wise' : ''}. Recording one opens the payment form filled in from it; check what it paid for before saving.</p>
+${ctx.wise ? html`<form class="card" method="post" action="/wise/fetch"><button class="ghost">Read the last 30 days from Wise</button></form>` : ''}
 ${transfers.length
   ? html`<div class="card scroll"><table><thead><tr><th>Date</th><th>Reference</th><th class="n">Sent</th><th class="n">Received</th><th></th></tr></thead><tbody>
-${transfers.map((t) => html`<tr><td>${t.created.slice(0, 10)}</td><td>${t.reference || ''}</td><td class="n">${money(t.source_value, t.source_currency)} ${t.source_currency}</td><td class="n">${t.target_value} ${t.target_currency}</td>
+${transfers.map((t) => html`<tr><td>${t.created.slice(0, 10)}</td><td>${t.reference || ''}</td><td class="n">${t.source_value ? html`${money(t.source_value, t.source_currency)} ${t.source_currency}` : html`<span class="muted small">GBP not known</span>`}</td><td class="n">${t.target_value ? `${t.target_value} ${t.target_currency}` : ''}</td>
 <td><a class="button" href="/payments/new?wise=${enc(t.id)}">Record</a> <form class="inline" method="post" action="/wise/${enc(t.id)}/ignore"><button class="ghost">Not a supplier payment</button></form></td></tr>`)}
 </tbody></table></div>`
   : html`<p class="muted">Nothing waiting.</p>`}`;

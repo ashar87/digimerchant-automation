@@ -333,7 +333,7 @@ ${!inv?.id && order.invoices?.length
       { value: '', label: '— choose —' },
       ...invoiceSeries(order).map((g, i) => ({ value: g.key, label: `replaces invoice ${i + 1} (${g.name}): a final, or a corrected version` })),
       { value: 'new', label: 'is another invoice on this PO, added to the others' },
-    ], '', { attrs: 'required' })}</div>`
+    ], inv?.seriesChoice || '', { attrs: 'required' })}</div>`
   : ''}
 <div class="grid">
   <div><label>Type</label>${select('kind', [{ value: 'proforma', label: 'Proforma' }, { value: 'final', label: 'Final invoice' }], inv?.kind || (order.invoices?.length ? 'final' : 'proforma'))}</div>

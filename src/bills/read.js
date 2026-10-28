@@ -62,12 +62,13 @@ export const BILL_SCHEMA = {
 export function geminiBillReader(provider) {
   return {
     name: 'gemini',
-    async read({ mime, data }) {
+    async read({ mime, data, more = [] }) {
       const kind = mime === 'application/pdf' ? 'pdf' : 'image';
+      const att = (a) => ({ kind: a.mime === 'application/pdf' ? 'pdf' : 'image', mime: a.mime, data: a.data });
       const out = await provider.readJson({
         system: SYSTEM,
-        text: 'Read this courier bill. Return null for anything you cannot read with certainty.',
-        attachments: [{ kind, mime, data }],
+        text: `Read this courier bill${more.length ? ` (the ${more.length + 1} attachments are its pages, in order)` : ''}. Return null for anything you cannot read with certainty.`,
+        attachments: [{ kind, mime, data }, ...more.map(att)],
         schema: BILL_SCHEMA,
         job: 'courier bill',
         label: kind === 'pdf' ? 'Courier bill PDF' : 'Courier bill photo',

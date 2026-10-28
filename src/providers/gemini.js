@@ -59,15 +59,15 @@ export async function extract({ system, text, attachments = [], label = null }) 
  * always on the vision model. (Gemini 3.8 dropped the sampling settings such as
  * temperature; the JSON schema is what keeps the output consistent.)
  */
-export async function readJson({ system, text, attachments = [], schema, job = 'document', label = null }) {
+export async function readJson({ system, text, attachments = [], schema, job = 'document', label = null, model = config.geminiVisionModel }) {
   const res = await withRetry(() => api().models.generateContent({
-    model: config.geminiVisionModel,
+    model,
     contents: [{ role: 'user', parts: [{ text }, ...attachments.map(toPart)] }],
     config: { systemInstruction: system, responseMimeType: 'application/json', responseSchema: schema },
-  }), { label: `gemini/${config.geminiVisionModel}` });
-  noteUsage({ job, detail: label, model: config.geminiVisionModel, ...usageFrom(res) });
+  }), { label: `gemini/${model}` });
+  noteUsage({ job, detail: label, model, ...usageFrom(res) });
   try {
-    return { data: JSON.parse(res.text), model: config.geminiVisionModel };
+    return { data: JSON.parse(res.text), model };
   } catch {
     throw new Error(`Gemini returned unparseable JSON: ${String(res.text).slice(0, 200)}`);
   }

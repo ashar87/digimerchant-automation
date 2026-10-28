@@ -51,11 +51,11 @@ export function inboxItems(ctx) {
   }
   for (const d of pendingDrafts(ctx.db)) {
     const problems = (d.reading.checks || []).filter((c) => c.severity !== 'ok').length;
-    items.push({ tone: 'warning', title: `Invoice to check: ${d.filename || `invoice ${d.id}`}${d.po ? ` for ${d.po}` : ''}`, detail: `${d.source === 'whatsapp' ? 'Forwarded on WhatsApp' : `Uploaded by ${d.created_by}`} · ${problems ? `${problems} thing(s) to look at` : 'arithmetic adds up'}`, href: `/invoices/drafts/${d.id}`, count: true });
+    items.push({ tone: 'warning', title: `Invoice to check: ${d.filename || `invoice ${d.id}`}${d.po ? ` for ${d.po}` : ''}`, detail: `${d.source === 'whatsapp' ? `From ${d.created_by} on WhatsApp` : `Uploaded by ${d.created_by}`} · ${problems ? `${problems} thing(s) to look at` : 'arithmetic adds up'}`, href: `/invoices/drafts/${d.id}`, count: true });
   }
   for (const d of pendingBillDrafts(ctx.db)) {
     const problems = (d.reading.checks || []).filter((c) => c.severity !== 'ok').length;
-    items.push({ tone: 'warning', title: `Courier bill to check: ${d.filename || `bill ${d.id}`}`, detail: `Uploaded by ${d.created_by} · ${problems ? `${problems} thing(s) to look at` : 'arithmetic adds up'}`, href: `/bills/drafts/${d.id}`, count: true });
+    items.push({ tone: 'warning', title: `Courier bill to check: ${d.filename || `bill ${d.id}`}`, detail: `${d.source === 'whatsapp' ? `From ${d.created_by} on WhatsApp` : `Uploaded by ${d.created_by}`} · ${problems ? `${problems} thing(s) to look at` : 'arithmetic adds up'}`, href: `/bills/drafts/${d.id}`, count: true });
   }
   for (const l of rateLookups(ctx.db)) {
     items.push({ tone: l.status === 'failed' ? 'error' : 'warning', title: `QB rate ${l.status === 'failed' ? 'lookup failed' : 'pending'} for payment ${l.payment_id} (${l.currency}, ${l.date}): ${l.message}`, href: `/payments/${enc(l.payment_id)}`, count: true });

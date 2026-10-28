@@ -8,9 +8,8 @@ import ExcelJS from 'exceljs';
 import { readExcelInvoice } from '../../src/invoices/excel.js';
 import { checkReading } from '../../src/invoices/checks.js';
 import { normaliseModelReading } from '../../src/invoices/model.js';
-import { intakeInvoice, handleForwardedInvoice, pendingDrafts } from '../../src/invoices/intake.js';
+import { intakeInvoice, pendingDrafts } from '../../src/invoices/intake.js';
 import { openLandingDb, saveLedger } from '../../src/landing/store.js';
-import { unsent } from '../../src/notify/outbox.js';
 
 export async function sampleXlsx({ total = 10630, deposit = 3189 } = {}) {
   const wb = new ExcelJS.Workbook();
@@ -104,16 +103,3 @@ test('a PDF is read by the model only when one is set up; otherwise it waits to 
   }
 });
 
-test('an invoice forwarded on WhatsApp with “invoice PO-007” becomes a draft and a card', async () => {
-  const { db, dir, done } = setup();
-  try {
-    const media = { data: (await sampleXlsx()).toString('base64'), mimetype: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', filename: 'PI.xlsx' };
-    const draft = await handleForwardedInvoice({ db, media, caption: 'invoice po-007 final', dir });
-    assert.equal(draft.po, 'PO-007');
-    assert.equal(draft.source, 'whatsapp');
-    const card = unsent(db).find((c) => c.kind === 'invoice_received');
-    assert.match(card.text, /Invoice received for PO-007 \(PI\.xlsx\)\n4 line\(s\), total 10,630 RMB\.\nThe arithmetic adds up\./);
-  } finally {
-    done();
-  }
-});

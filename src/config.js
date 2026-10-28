@@ -124,6 +124,9 @@ export function loadChats() {
     watch,
     byId: new Map(watch.map((c) => [c.id, c])),
     people: raw.people || {},
+    // Groups read for supplier invoices, courier bills and Wise payment messages
+    // only, never for tasks: [{ name, id? }]. The id is looked up by name when missing.
+    files: (raw.files || []).filter((c) => c.name || c.id),
   };
 }
 

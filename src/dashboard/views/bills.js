@@ -6,7 +6,7 @@ import { ROOT } from '../../config.js';
 import { fmtMoney } from '../../landing/money.js';
 import { addAttachment } from '../../files/attachments.js';
 import { intakeBill, getBillDraft, pendingBillDrafts, closeBillDraft } from '../../bills/intake.js';
-import { INVOICE_DIR } from '../../invoices/intake.js';
+import { draftFilePath } from '../../invoices/intake.js';
 import { saveLedger, deleteRecord } from '../../landing/store.js';
 import { computeLandingCosts } from '../../landing/engine.js';
 import { queueBillCards } from '../../notify/bills.js';
@@ -171,14 +171,16 @@ export function billDraftPage(ctx) {
   const body = html`
 <p class="muted small"><a href="/bills">Courier bills</a></p>
 <h1>Check before saving</h1>
-<p class="sub">${draft.filename || 'Courier bill'} · ${METHOD[r.method] || ''} <a href="/bills/drafts/${draft.id}/file" target="_blank">Open the original</a></p>
-${draft.status !== 'pending' ? html`<p class="notice">This bill was already ${draft.status}${draft.saved_as ? html` as <a href="/bills/${enc(draft.saved_as)}">${draft.saved_as}</a>` : ''}.</p>` : ''}
+<p class="sub">${draft.filename || 'Courier bill'}${draft.source === 'whatsapp' ? ` · from ${draft.created_by} on WhatsApp` : ''} · ${METHOD[r.method] || ''} <a href="/bills/drafts/${draft.id}/file" target="_blank">Open the original</a>${r.pages?.length ? html` · pages ${[0, ...r.pages.map((_, i) => i + 1)].map((n) => html`<a href="/bills/drafts/${draft.id}/file?page=${n}" target="_blank">${n + 1}</a> `)}` : ''}</p>
+${draft.replaced_by ? html`<p class="notice">A corrected version came in later: <a href="/bills/drafts/${draft.replaced_by}">bill ${draft.replaced_by}</a>. This one was set aside.</p>` : draft.status !== 'pending' ? html`<p class="notice">This bill was already ${draft.status}${draft.saved_as ? html` as <a href="/bills/${enc(draft.saved_as)}">${draft.saved_as}</a>` : ''}.</p>` : ''}
+${r.replaces?.draft ? html`<p class="notice">A corrected version of <a href="/bills/drafts/${r.replaces.draft}">bill ${r.replaces.draft}</a>, which was set aside.</p>` : ''}
+${r.replaces?.bill ? html`<p class="notice"><a href="/bills/${enc(r.replaces.bill)}">${r.replaces.bill}</a> already covers the same shipments. If this corrects it, edit ${r.replaces.bill} and discard this one.</p>` : ''}
 ${r.totalUsd ? html`<p class="small">The bill asks for <b>$${fmtMoney(r.totalUsd)}</b>${r.rmbPerUsd ? ` at ${r.rmbPerUsd} RMB per USD` : ''}. Record the payment against this bill once it’s saved.</p>` : ''}
 ${(r.lines || []).some((l) => l.kind === 'onward') ? onwardGuide(true) : ''}
 ${(r.checks || []).length ? html`<div class="card"><ul class="items">${r.checks.map((c) => html`<li><span class="sev ${c.severity === 'ok' ? 'info' : 'warning'}">${c.severity === 'ok' ? '✓' : '!'}</span><div style="flex:1">${c.message}</div></li>`)}</ul></div>` : ''}
-${billForm(ctx, bill, { action: `/bills/drafts/${draft.id}/save`, submit: 'Save courier bill' })}
+${draft.status === 'pending' ? html`${billForm(ctx, bill, { action: `/bills/drafts/${draft.id}/save`, submit: 'Save courier bill' })}
 <p class="muted small">The date is the day the bill was sent (from the file name when it has one). The original is attached to the bill when you save.</p>
-<form method="post" action="/bills/drafts/${draft.id}/discard" data-confirm="Discard this bill without saving it?"><button class="danger">Discard</button></form>
+<form method="post" action="/bills/drafts/${draft.id}/discard" data-confirm="Discard this bill without saving it?"><button class="danger">Discard</button></form>` : ''}
 ${r.sourceText ? html`<details><summary>What the Excel file says</summary><pre class="small" style="white-space:pre-wrap">${r.sourceText}</pre></details>` : ''}`;
   return { title: 'Check courier bill', body };
 }
@@ -196,6 +198,10 @@ export function saveBillDraft(ctx) {
   storeBill(ctx, bill);
   const file = path.resolve(ROOT, draft.file_path);
   if (fs.existsSync(file)) addAttachment(ctx.db, { entity: 'courier_bill', entityId: bill.id, buffer: fs.readFileSync(file), filename: draft.filename || `${bill.id}${path.extname(file)}`, actor: ctx.actor });
+  (draft.reading.pages || []).forEach((_, i) => {
+    const page = draftFilePath(draft, i + 1);
+    if (page) addAttachment(ctx.db, { entity: 'courier_bill', entityId: bill.id, buffer: fs.readFileSync(page), filename: `${bill.id} page ${i + 2}${path.extname(page)}`, actor: ctx.actor });
+  });
   closeBillDraft(ctx.db, draft.id, 'saved', bill.id);
   return { redirect: `/bills/${enc(bill.id)}?ok=${enc(`${bill.id} saved, with the bill attached.`)}` };
 }
@@ -208,9 +214,10 @@ export function discardBillDraft(ctx) {
 
 export function billDraftFile(ctx) {
   const draft = loadBillDraft(ctx);
-  const file = path.resolve(ROOT, draft.file_path);
-  // Only ever serve files from the invoice folder.
-  if (!file.startsWith(path.resolve(INVOICE_DIR) + path.sep) || !fs.existsSync(file)) throw notFound('That file');
+  const page = Number(ctx.url.searchParams.get('page') || 0);
+  const file = draftFilePath(draft, page);
+  if (!file) throw notFound('That file');
+  if (page) return { body: fs.readFileSync(file), type: path.extname(file) === '.pdf' ? 'application/pdf' : 'image/jpeg', headers: { 'Content-Disposition': 'inline' } };
   return { body: fs.readFileSync(file), type: draft.mime || 'application/octet-stream', headers: { 'Content-Disposition': `inline; filename="${(draft.filename || 'bill').replace(/["\r\n]/g, '')}"` } };
 }
 

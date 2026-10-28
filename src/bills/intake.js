@@ -4,12 +4,10 @@
  * photos by Gemini), checked by plain arithmetic, and saved as a draft that a
  * person checks before it becomes a courier bill.
  */
-import crypto from 'node:crypto';
-import fs from 'node:fs';
 import path from 'node:path';
 import { ROOT } from '../config.js';
 import { loadLedger } from '../landing/store.js';
-import { INVOICE_DIR, mimeFor } from '../invoices/intake.js';
+import { INVOICE_DIR, mimeFor, keepFile } from '../invoices/intake.js';
 import { readExcelBill, billFromRows } from './read.js';
 import { checkBill, totalWithoutFee } from './checks.js';
 import { syncAmazon } from '../amazon/sync.js';
@@ -54,18 +52,17 @@ async function addShipmentsFromAmazon(db, amazon, raw, shipments) {
   }
 }
 
-export async function intakeBill({ db, buffer, filename, mime, source = 'upload', actor, reader = null, amazon = null, dir = INVOICE_DIR, today = new Date().toISOString().slice(0, 10) }) {
+/** `pages`: further photos of the same bill, read with the first (as for invoices). */
+export async function intakeBill({ db, buffer, filename, mime, source = 'upload', actor, reader = null, amazon = null, dir = INVOICE_DIR, today = new Date().toISOString().slice(0, 10), pages = [] }) {
   if (!buffer?.length) throw new Error('The file is empty');
   if (buffer.length > MAX_BYTES) throw new Error('The file is over 15 MB');
   mime = mimeFor(filename, mime);
   if (mime !== EXCEL && !MODEL.has(mime)) throw new Error(`Can't read ${mime} bills: send Excel (.xlsx), PDF or a photo`);
+  pages = pages.map((p) => ({ ...p, mime: mimeFor(p.filename, p.mime) })).filter((p) => p.buffer?.length && MODEL.has(p.mime));
 
   // Kept by content hash next to the invoices, so the nightly backup covers it.
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const hash = crypto.createHash('sha256').update(buffer).digest('hex').slice(0, 24);
-  const ext = path.extname(filename || '').toLowerCase() || { 'application/pdf': '.pdf', 'image/jpeg': '.jpg', 'image/png': '.png' }[mime] || '';
-  const filePath = path.join(dir, `${hash}${ext}`);
-  if (!fs.existsSync(filePath)) fs.writeFileSync(filePath, buffer, { mode: 0o600 });
+  const filePath = keepFile(buffer, filename, mime, dir);
+  const pagePaths = pages.map((p) => path.relative(ROOT, keepFile(p.buffer, p.filename, p.mime, dir)));
 
   let reading;
   try {
@@ -75,7 +72,7 @@ export async function intakeBill({ db, buffer, filename, mime, source = 'upload'
       raw = await readExcelBill(buffer);
       method = 'excel';
     } else if (reader) {
-      raw = await reader.read({ mime, data: buffer.toString('base64') });
+      raw = await reader.read({ mime, data: buffer.toString('base64'), more: pages.map((p) => ({ mime: p.mime, data: p.buffer.toString('base64') })) });
       method = 'model';
     }
     if (raw) {
@@ -97,6 +94,7 @@ export async function intakeBill({ db, buffer, filename, mime, source = 'upload'
     reading.statedTotalRmb = fullTotal;
   }
   reading.checks = checkBill(reading);
+  if (pagePaths.length) reading.pages = pagePaths;
 
   const res = db
     .prepare('INSERT INTO bill_drafts (created_at, created_by, source, file_path, filename, mime, reading) VALUES (?, ?, ?, ?, ?, ?, ?)')
