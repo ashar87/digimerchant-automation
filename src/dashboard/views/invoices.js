@@ -55,8 +55,11 @@ export function draftPage(ctx) {
   const draft = loadDraft(ctx);
   const r = draft.reading;
   const { ledger } = ctx.data;
-  const existing = draft.po ? ledger.orders.find((o) => o.po === draft.po) : null;
-  const order = existing || { po: draft.po || nextPo(ctx.db), marketplace: r.marketplace || undefined, invoices: [] };
+  // ?po= opens the page on another PO (picked below), so its invoices can be chosen in "This invoice…".
+  const picked = ctx.url.searchParams.get('po')?.trim().toUpperCase() || null;
+  const po = picked || draft.po;
+  const existing = po ? ledger.orders.find((o) => o.po === po) : null;
+  const order = existing || { po: po || nextPo(ctx.db), marketplace: r.marketplace || undefined, invoices: [] };
   // A corrected version, or the balance invoice, of an invoice already on this PO: saving it replaces that one.
   const replaced = r.replaces?.po === order.po ? (existing?.invoices || []).find((i) => i.id === r.replaces.invoiceId) : null;
   const inv = {
@@ -97,6 +100,10 @@ ${r.payUsd ? html`<p class="small">The invoice asks for <b>$${fmtMoney(r.payUsd)
 ${r.marketplaceAsPrinted ? html`<p class="small">Marketplace printed on the invoice: <b>${r.marketplaceAsPrinted}</b> (suppliers sometimes print the wrong one).</p>` : ''}
 ${r.notes ? html`<p class="notice">${r.notes}</p>` : ''}
 <div class="card"><ul class="items">${(r.checks || []).map((c) => html`<li><span class="sev ${c.severity === 'ok' ? 'info' : 'warning'}">${c.severity === 'ok' ? '✓' : '!'}</span><div style="flex:1">${c.message}</div></li>`)}</ul></div>
+${draft.status === 'pending' && ledger.orders.length
+  ? html`<form class="card" method="get" action="/invoices/drafts/${draft.id}"><label for="pick-po"><b>${existing ? `Saving to ${existing.po}.` : 'Saving to a new PO.'}</b> For an order already on the dashboard (e.g. its deposit invoice), use its PO:</label>
+${select('po', [{ value: '', label: '— choose a PO —' }, ...[...ledger.orders].reverse().map((o) => ({ value: o.po, label: `${o.po} · ${o.supplier || ''} · ${o.marketplace || ''}${o.invoices?.length ? ` · ${o.invoices.length} invoice(s)` : ''}` }))], existing?.po || '', { attrs: 'id="pick-po"' })} <button class="ghost">Use this PO</button></form>`
+  : ''}
 ${draft.status === 'pending'
   ? html`${invoiceForm(ctx, order, inv, { action: `/invoices/drafts/${draft.id}/save`, submit: 'Save to this PO', head, version: html`${versionField(existing)}<input type="hidden" name="version_po" value="${order.po}">` })}
 <form method="post" action="/invoices/drafts/${draft.id}/discard"><button class="danger">Discard</button></form>`

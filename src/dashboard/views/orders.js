@@ -67,7 +67,7 @@ const PAGE_SIZE = 20;
 export const PO_RULES = [
   ['One PO is one purchase', 'Everything ordered together and paid together: a deposit and a balance. Create the PO before paying the deposit, and never reuse a PO number. The next one is suggested.'],
   ['One marketplace per PO', 'UK, DE or US. UK and DE are costed in GBP, the US in USD. Ordering for two marketplaces at once means two POs; they can still be paid in one transfer.'],
-  ['A PO can hold several supplier invoices', 'From one supplier or several (e.g. Yongbo and Hongtai through Annie). When you add an invoice, say whether it replaces one already on the PO (a final after a proforma, or a corrected version) or is another invoice added to the others.'],
+  ['A PO can hold several supplier invoices', 'From one supplier or several (e.g. Yongbo and Hongtai through Annie). When you add an invoice, say whether it replaces one already on the PO (the balance or final invoice after the deposit one, or a corrected version) or is another invoice for other goods. A replaced invoice stays on the PO, marked replaced, with its file; only the newest version counts, so the same goods are never counted twice.'],
   ['The latest version of each invoice counts', 'The final if there is one, otherwise the proforma. Replaced versions are kept for the record but don’t count. Each invoice’s fees, labour and rate differences stay with that invoice’s products.'],
   ['Deposit and balance go to the same PO', 'Wise reference “PO-041 30%” for the deposit and “PO-041 balance” for the rest, covering every invoice on the PO. The supplier doesn’t need to print the PO; it’s linked when you upload the invoice.'],
   ['One transfer can pay several POs', 'And courier bills, packing bags or samples. Record one row per PO (or bill), each with the amount its invoice asks for, all in USD or all in RMB. The transfer is split by those amounts. Suppliers are paid in USD or RMB; you can fund it from USD, GBP or EUR.'],
@@ -331,8 +331,8 @@ ${version === undefined ? versionField(ctx.data.ledger.orders.find((o) => o.po =
 ${!inv?.id && order.invoices?.length
   ? html`<div class="notice" style="margin-top:0"><label style="color:inherit"><b>This invoice…</b></label>${select('series', [
       { value: '', label: '— choose —' },
-      ...invoiceSeries(order).map((g, i) => ({ value: g.key, label: `replaces invoice ${i + 1} (${g.name}): a final, or a corrected version` })),
-      { value: 'new', label: 'is another invoice on this PO, added to the others' },
+      ...invoiceSeries(order).map((g, i) => ({ value: g.key, label: `replaces invoice ${i + 1} (${g.name}): its balance / final invoice, or a corrected version. Both stay on the PO; the newer one counts` })),
+      { value: 'new', label: 'is another invoice on this PO, for other goods: counted on top of the others' },
     ], inv?.seriesChoice || '', { attrs: 'required' })}</div>`
   : ''}
 <div class="grid">

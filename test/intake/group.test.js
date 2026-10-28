@@ -152,6 +152,27 @@ test('an order typed in by hand is found by supplier, market and order date', as
   assert.equal(getDraft(db, bal.draft.id).po, 'PO-040');
 });
 
+test('an invoice that found no PO can be opened on one, to say which invoice it replaces', async () => {
+  const db = setup();
+  saveLedger(db, { orders: [{ po: 'PO-060', supplier: 'Test Leaf Metal', marketplace: 'UK', invoices: [{ id: 'PO-060-final-2026-09-01', kind: 'final', date: '2026-09-01', statedTotalRmb: '3300', lines: [{ kind: 'goods', product: 'G-UK', qty: 330, rmb: 3300 }] }] }] }, { actor: 'test' });
+  const [bal] = await intake(db, [pic('bal')]);
+  assert.equal(getDraft(db, bal.draft.id).po, null, 'typed in with another date, so not found');
+  const server = createDashboard({ db });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  try {
+    const page = (q = '') => fetch(`http://127.0.0.1:${server.address().port}/invoices/drafts/${bal.draft.id}${q}`, { headers: { Cookie: 'actor=Ashar' } }).then((r) => r.text());
+    const before = await page();
+    assert.match(before, /Saving to a new PO\./);
+    assert.doesNotMatch(before, /name="series"/);
+    const after = await page('?po=PO-060');
+    assert.match(after, /Saving to PO-060\./);
+    assert.match(after, /<option value="main">replaces invoice 1 .*Both stay on the PO; the newer one counts/);
+    assert.match(after, /<input name="po" value="PO-060"/);
+  } finally {
+    server.close();
+  }
+});
+
 test('a corrected bill is found by reply, or by its tracking numbers when the FBA IDs were what was wrong', async () => {
   const db = setup();
   const [a] = await intake(db, [pic('billB')]);
